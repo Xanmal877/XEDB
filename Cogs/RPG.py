@@ -1,6 +1,15 @@
+from discord import Button, ButtonStyle, Embed
+import discord
 from discord.ext import commands
+from discord.ui import Button, View
 import json
+import asyncio  # For asynchronous sleep
 from random import randint
+import sys
+
+character_database = "F:\Coding Projects\Bots\Python\Xans-Python-Discord-Bot\RPG Files\character_database.json"
+monster_database = "F:\Coding Projects\Bots\Python\Xans-Python-Discord-Bot\RPG Files\monster_database.json"
+
 
 class RPGCog(commands.Cog):
     def __init__(self, client):
@@ -10,29 +19,24 @@ class RPGCog(commands.Cog):
     "slime": {"health": 20, "attack": 5, "defense": 2, "experience": 3}
 }
 
-
     @commands.Cog.listener()
     async def on_ready(self):
         print("Basic RPG Ready!")
         try:
-            with open("character_database.json", "r") as f:
-                self.character_database = json.load(f)
-            with open("monster_database.json", "r") as f:
-                self.monster_database = json.load(f)
+            with open(character_database, "r") as f:
+                self.character_database = await json.load(f)
+            with open(monster_database, "r") as f:
+                self.monster_database = await json.load(f)
             print(f"Loaded character_database: {self.character_database}")
         except FileNotFoundError:
             print("No JSON file found, initializing empty database.")
-            print("Monster JSON file not found, initializing empty database.")
             self.character_database = {}
-        
-
-
 
     @commands.command()
     async def start(self, ctx):
         # Try to load the database first
         try:
-            with open("character_database.json", "r") as f:
+            with open(character_database, "r") as f:
                 self.character_database = json.load(f)
         except FileNotFoundError:
             await ctx.send("Database file not found, initializing empty database.")
@@ -45,6 +49,7 @@ class RPGCog(commands.Cog):
             return
         player_character = self.character_database[author_id]
         await ctx.send(f"Welcome back, {ctx.author.display_name}! Your adventure begins now as a {player_character['class']}!")
+
 
 
     @commands.command(name="create")
@@ -92,7 +97,7 @@ class RPGCog(commands.Cog):
 
         self.character_database[author_id] = new_character  # Add new character to dictionary
 
-        with open("character_database.json", "w") as f:
+        with open(character_database, "w") as f:
             json.dump(self.character_database, f)
 
         await ctx.send(f"Character {character_name} created successfully!")  # Send confirmation message
@@ -135,7 +140,7 @@ class RPGCog(commands.Cog):
             return
 
         self.character_database[author_id]["name"] = new_name
-        with open("character_database.json", "w") as f:
+        with open(character_database, "w") as f:
             json.dump(self.character_database, f)
 
         await ctx.send(f"Character renamed to {new_name}!")
@@ -164,7 +169,7 @@ class RPGCog(commands.Cog):
             stats = {"health": 100, "attack": 12, "defense": 8, "magic_attack": 3, "magic_defense": 8}
 
         self.character_database[author_id].update({"class": new_class.lower(), **stats})
-        with open("character_database.json", "w") as f:
+        with open(character_database, "w") as f:
             json.dump(self.character_database, f)
 
         await ctx.send(f"Class changed to {new_class.capitalize()}!")
@@ -174,6 +179,7 @@ class RPGCog(commands.Cog):
     @commands.command(name="battle")
     async def battle(self, ctx, monster_name):
         author_id = str(ctx.author.id)
+
         if author_id not in self.character_database:
             await ctx.send("You don't have a character yet. Create one using the 'create (name) (class)' command.")
             return
@@ -183,23 +189,16 @@ class RPGCog(commands.Cog):
             return
 
         player = self.character_database[author_id]
-        monster = self.monster_database[monster_name]
+        monster = self.monster_database[monster_name].copy()
 
-        await ctx.send(f"A wild {monster_name} appears! 🌟")
+        def check(msg):
+            return msg.author == ctx.author and msg.channel == ctx.channel and \
+                msg.content.lower() in ["attack", "defend"]
 
-        while player["health"] > 0 and monster["health"] > 0:
-            player_attack = randint(0, player["attack"])
-            monster_attack = randint(0, monster["attack"])
-
-            player["health"] -= monster_attack
-            monster["health"] -= player_attack
-
-            await ctx.send(f"{player['name']} hits {monster_name} for {player_attack} damage! 🗡️")
-            await ctx.send(f"{monster_name} hits {player['name']} for {monster_attack} damage! 🤕")
-
+        while True:
             if player["health"] <= 0:
                 await ctx.send(f"{player['name']} has been defeated. 😢")
-                return
+                break
 
             if monster["health"] <= 0:
                 await ctx.send(f"{monster_name} has been defeated! 🌟")
@@ -207,8 +206,32 @@ class RPGCog(commands.Cog):
                 await ctx.send(f"You gained {monster['experience']} experience points!")
                 break
 
-        with open("character_database.json", "w") as f:
+            await ctx.send(f"A wild {monster_name} appears! Type 'attack' to attack or 'defend' to defend.")
+
+            try:
+                msg = await self.bot.wait_for('message', timeout=30, check=check)
+
+                if msg.content.lower() == "attack":
+                    self.execute_attack(player, monster)
+                    await ctx.send(f"{player['name']} hits {monster_name} for {player['last_attack']} damage! 🗡️")
+                elif msg.content.lower() == "defend":
+                    await ctx.send(f"{player['name']} defends!")
+
+                self.execute_attack(monster, player)
+                await ctx.send(f"{monster_name} hits {player['name']} for {monster['last_attack']} damage! 🤕")
+            except asyncio.TimeoutError:
+                await ctx.send("You took too long to choose an action!")
+                break
+
+        with open('character_database.json', "w") as f:
             json.dump(self.character_database, f)
+
+    def execute_attack(self, attacker, defender):
+        attack_power = randint(0, attacker["attack"])
+        defender["health"] -= attack_power
+        attacker["last_attack"] = attack_power
+
+
 
 
 
