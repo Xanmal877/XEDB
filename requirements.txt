@@ -2,4 +2,3 @@ discord.py
 asyncio
 torch
 openai
-youtube-dl

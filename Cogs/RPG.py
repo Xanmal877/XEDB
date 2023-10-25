@@ -1,14 +1,9 @@
 from discord import Button, ButtonStyle, Embed
-import discord
-from discord.ext import commands
-from discord.ui import Button, View
 import json
-import asyncio  # For asynchronous sleep
-from random import randint
-import sys
+from discord.ext import commands
 
-character_database = "F:\Coding Projects\Bots\Python\Xans-Python-Discord-Bot\RPG Files\character_database.json"
-monster_database = "F:\Coding Projects\Bots\Python\Xans-Python-Discord-Bot\RPG Files\monster_database.json"
+character_database = "F:/Coding Projects/Bots/Python/Xans-Python-Discord-Bot/RPG Files/character_database.json"
+monster_database = "F:/Coding Projects/Bots/Python/Xans-Python-Discord-Bot/RPG Files/monster_database.json"
 
 
 class RPGCog(commands.Cog):
@@ -16,23 +11,39 @@ class RPGCog(commands.Cog):
         self.client = client
         self.character_database = {}
         self.monster_database = {
-    "slime": {"health": 20, "attack": 5, "defense": 2, "experience": 3}
-}
+            "slime": {"health": 20, "attack": 5}
+        }
+        self.battles = {}  # To keep track of ongoing battles
 
     @commands.Cog.listener()
     async def on_ready(self):
         print("Basic RPG Ready!")
         try:
             with open(character_database, "r") as f:
-                self.character_database = await json.load(f)
+                self.character_database = json.load(f)
             with open(monster_database, "r") as f:
-                self.monster_database = await json.load(f)
+                self.monster_database = json.load(f)
             print(f"Loaded character_database: {self.character_database}")
+            print(f"Loaded monster_database: {self.monster_database}")
         except FileNotFoundError:
             print("No JSON file found, initializing empty database.")
             self.character_database = {}
 
-    @commands.command()
+    @commands.command(name="info", ignore_case=True)
+    async def info(self, ctx):
+        print("info command called")  # add this line to check if the function is being called
+        embed = Embed(title="🌟 RPG Bot Commands 🌟", description="List of available commands:", color=0x00ff00)
+        embed.add_field(name="!start", value="Start your RPG adventure!", inline=False)
+        embed.add_field(name="!create [name] [class]", value="Create a new character.", inline=False)
+        embed.add_field(name="!stats", value="View your character's stats.", inline=False)
+        embed.add_field(name="!rename [new_name]", value="Rename your character.", inline=False)
+        embed.add_field(name="!change_class [new_class]", value="Change your character's class.", inline=False)
+        embed.add_field(name="!battle [monster_name]", value="Battle with a monster.", inline=False)
+
+        print("sending message")  # add this line to check if the message is being sent
+        await ctx.send(embed=embed)
+
+    @commands.command(name="start", ignore_case=True)
     async def start(self, ctx):
         # Try to load the database first
         try:
@@ -41,7 +52,7 @@ class RPGCog(commands.Cog):
         except FileNotFoundError:
             await ctx.send("Database file not found, initializing empty database.")
             self.character_database = {}
-            
+
         # Continue with the original functionality
         author_id = str(ctx.author.id)
         if author_id not in self.character_database:
@@ -50,9 +61,7 @@ class RPGCog(commands.Cog):
         player_character = self.character_database[author_id]
         await ctx.send(f"Welcome back, {ctx.author.display_name}! Your adventure begins now as a {player_character['class']}!")
 
-
-
-    @commands.command(name="create")
+    @commands.command(name="create", ignore_case=True)
     async def create(self, ctx, character_name, character_class):
         author_id = str(ctx.author.id)
         valid_classes = ["warrior", "mage", "rogue", "monk"]
@@ -102,10 +111,7 @@ class RPGCog(commands.Cog):
 
         await ctx.send(f"Character {character_name} created successfully!")  # Send confirmation message
 
-
-
-
-    @commands.command()
+    @commands.command(name="stats", ignore_case=True)
     async def stats(self, ctx):
         author_id = str(ctx.author.id)
         if author_id not in self.character_database:
@@ -129,59 +135,12 @@ class RPGCog(commands.Cog):
         😄 Charisma: {char['charisma']}""")
 
 
-
-
-
-    @commands.command(name="rename")
-    async def rename_character(self, ctx, new_name: str):
-        author_id = str(ctx.author.id)
-        if author_id not in self.character_database:
-            await ctx.send("You don't have a character yet. Create one using the 'create (name) (class)' command.")
-            return
-
-        self.character_database[author_id]["name"] = new_name
-        with open(character_database, "w") as f:
-            json.dump(self.character_database, f)
-
-        await ctx.send(f"Character renamed to {new_name}!")
-
-
-    @commands.command(name="change_class")
-    async def change_class(self, ctx, new_class: str):
-        author_id = str(ctx.author.id)
-        valid_classes = ["warrior", "mage", "rogue", "monk"]
-        if new_class.lower() not in valid_classes:
-            await ctx.send("Invalid character class. Choose from: Warrior, Mage, Rogue, Monk.")
-            return
-
-        if author_id not in self.character_database:
-            await ctx.send("You don't have a character yet. Create one using the 'create (name) (class)' command.")
-            return
-
-        # Add statistics based on class
-        if new_class.lower() == "warrior":
-            stats = {"health": 100, "attack": 10, "defense": 10, "magic_attack": 2, "magic_defense": 5}
-        elif new_class.lower() == "mage":
-            stats = {"health": 70, "attack": 8, "defense": 5, "magic_attack": 15, "magic_defense": 10}
-        elif new_class.lower() == "rogue":
-            stats = {"health": 80, "attack": 12, "defense": 8, "magic_attack": 7, "magic_defense": 7}
-        else: # monk
-            stats = {"health": 100, "attack": 12, "defense": 8, "magic_attack": 3, "magic_defense": 8}
-
-        self.character_database[author_id].update({"class": new_class.lower(), **stats})
-        with open(character_database, "w") as f:
-            json.dump(self.character_database, f)
-
-        await ctx.send(f"Class changed to {new_class.capitalize()}!")
-
-
-
-    @commands.command(name="battle")
+    @commands.command(name="battle", ignore_case=True)
     async def battle(self, ctx, monster_name):
         author_id = str(ctx.author.id)
 
         if author_id not in self.character_database:
-            await ctx.send("You don't have a character yet. Create one using the 'create (name) (class)' command.")
+            await ctx.send("You don't have a character yet.")
             return
 
         if monster_name not in self.monster_database:
@@ -191,50 +150,70 @@ class RPGCog(commands.Cog):
         player = self.character_database[author_id]
         monster = self.monster_database[monster_name].copy()
 
-        def check(msg):
-            return msg.author == ctx.author and msg.channel == ctx.channel and \
-                msg.content.lower() in ["attack", "defend"]
+        self.battles[author_id] = {"player": player, "monster": monster}
+        await ctx.send(f"A wild {monster_name} appears! Use `!attack` or `!defend` to take actions.")
 
-        while True:
-            if player["health"] <= 0:
-                await ctx.send(f"{player['name']} has been defeated. 😢")
-                break
+    @commands.command(name='attack', aliases=['atk'], ignore_case=True)
+    async def attack(self, ctx, monster_name):
+        author_id = str(ctx.author.id)
 
-            if monster["health"] <= 0:
-                await ctx.send(f"{monster_name} has been defeated! 🌟")
-                player["experience"] += monster["experience"]
-                await ctx.send(f"You gained {monster['experience']} experience points!")
-                break
+        if author_id not in self.battles:
+            await ctx.send("You're not in a battle.")
+            return
 
-            await ctx.send(f"A wild {monster_name} appears! Type 'attack' to attack or 'defend' to defend.")
+        battle = self.battles[author_id]
+        player = battle["player"]
+        monster = battle["monster"]
 
-            try:
-                msg = await self.bot.wait_for('message', timeout=30, check=check)
+        player_attack = player.get("attack", 0)
+        monster_defense = monster.get("defense", 0)
 
-                if msg.content.lower() == "attack":
-                    self.execute_attack(player, monster)
-                    await ctx.send(f"{player['name']} hits {monster_name} for {player['last_attack']} damage! 🗡️")
-                elif msg.content.lower() == "defend":
-                    await ctx.send(f"{player['name']} defends!")
+        # Perform attack calculations here
+        damage = player_attack - monster_defense
+        if damage < 0:
+            damage = 0  # Make sure damage is never negative
 
-                self.execute_attack(monster, player)
-                await ctx.send(f"{monster_name} hits {player['name']} for {monster['last_attack']} damage! 🤕")
-            except asyncio.TimeoutError:
-                await ctx.send("You took too long to choose an action!")
-                break
+        monster["health"] -= damage
 
-        with open('character_database.json', "w") as f:
-            json.dump(self.character_database, f)
+        await ctx.send(f"You attack the {monster_name} and deal {damage} damage!")
 
-    def execute_attack(self, attacker, defender):
-        attack_power = randint(0, attacker["attack"])
-        defender["health"] -= attack_power
-        attacker["last_attack"] = attack_power
+        if monster["health"] <= 0:
+            experience_gain = monster.get("experience", 0)
+            player["experience"] += experience_gain
+            await ctx.send(f"You have defeated the monster and gained {experience_gain} experience points!")
+            del self.battles[author_id]
+            return
 
+        # Monster turn
+        monster_attack = monster.get("attack", 0)
+        player_defense = player.get("defense", 0)
 
+        # Perform monster attack calculations here
+        damage = monster_attack - player_defense
+        if damage < 0:
+            damage = 0  # Make sure damage is never negative
 
+        player["health"] -= damage
 
+        await ctx.send(f"The {monster_name} attacks you and deals {damage} damage!")
 
+        if player["health"] <= 0:
+            await ctx.send(f"Game over! You were defeated by the {monster}.")
+            del self.battles[author_id]  # Remove the battle as it's now over
 
+    @commands.command(name="defend", ignore_case=True)
+    async def defend(self, ctx):
+        author_id = str(ctx.author.id)
+
+        if author_id not in self.battles:
+            await ctx.send("You're not in a battle.")
+            return
+
+        battle = self.battles[author_id]
+        battle["player_defense_boost"] = 20  # Increase defense by 20 for this turn
+
+        await ctx.send("You take a defensive stance, boosting your defense by 20 for this turn!")
+        
+        
 async def setup(client):
     await client.add_cog(RPGCog(client))
