@@ -8,7 +8,7 @@ class Moderation(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Moderation Enabled")
+        print("Moderation Enforced")
         await self.client.tree.sync()
 
         
@@ -32,8 +32,8 @@ class Moderation(commands.Cog):
     async def purge(self, interaction: discord.Interaction, count: int):
         try:
             await interaction.channel.purge(limit=count)
-            await interaction.send_message(f"{count} message(s) have been deleted")
-
+            await interaction.response.send_message(f"{count} message(s) have been deleted")  # Use interaction.response to send the message
+            
         except Forbidden:
             await interaction.send("Missing permissions")
 

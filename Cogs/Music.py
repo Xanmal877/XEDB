@@ -15,7 +15,7 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Music cog is ready.")
+        print("Music can be played!")
         await self.client.tree.sync()
 
     async def is_music_channel(interaction: discord.Interaction):
