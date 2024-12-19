@@ -1,0 +1,397 @@
+{
+    "General Knowledge": [
+        {
+            "question": "Which scientist is known for the theory of general relativity?",
+            "choices": [
+                "Albert Einstein",
+                "Isaac Newton",
+                "Nikola Tesla",
+                "Marie Curie"
+            ],
+            "correct_index": 0
+        },
+        {
+            "question": "Which city is home to the ancient landmark 'The Colosseum'?",
+            "choices": [
+                "Athens",
+                "Cairo",
+                "Paris",
+                "Rome"
+            ],
+            "correct_index": 3
+        },
+        {
+            "question": "Who is the author of 'One Hundred Years of Solitude'?",
+            "choices": [
+                "Pablo Neruda",
+                "Mario Vargas Llosa",
+                "Gabriel Garcia Marquez",
+                "Jorge Luis Borges"
+            ],
+            "correct_index": 2
+        },
+        {
+            "question": "Who was the first emperor of China?",
+            "choices": [
+                "Han Wudi",
+                "Qin Shi Huang",
+                "Cao Cao",
+                "Sun Tzu"
+            ],
+            "correct_index": 1
+        },
+        {
+            "question": "Which planet is known as the Red Planet?",
+            "choices": [
+                "Mars",
+                "Jupiter",
+                "Venus",
+                "Saturn"
+            ],
+            "correct_index": 0
+        },
+        {
+            "question": "What is the capital city of Canada?",
+            "choices": [
+                "Toronto",
+                "Montreal",
+                "Ottawa",
+                "Vancouver"
+            ],
+            "correct_index": 2
+        },
+        {
+            "question": "What is the capital of Iceland?",
+            "choices": [
+                "Helsinki",
+                "Reykjavik",
+                "Oslo",
+                "Copenhagen"
+            ],
+            "correct_index": 1
+        },
+        {
+            "question": "When someone is cowardly, they are said to have what color belly?",
+            "choices": [
+                "Green",
+                "Red",
+                "Blue",
+                "Yellow"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "In the Morse code, which letter is indicated by 3 dots? ",
+            "choices": [
+                "O",
+                "S",
+                "A",
+                "C"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Five dollars is worth how many nickles?",
+            "choices": [
+                "25",
+                "69",
+                "100",
+                "50"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "According to Sherlock Holmes, \"If you eliminate the impossible, whatever remains, however improbable, must be the...\"",
+            "choices": [
+                "Source",
+                "Answer",
+                "Cause",
+                "Truth"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Which sign of the zodiac is represented by the Crab?",
+            "choices": [
+                "Cancer",
+                "Libra",
+                "Virgo",
+                "Sagittarius"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "In 2013 how much money was lost by Nigerian scams?",
+            "choices": [
+                "$95 Million",
+                "$12.7 Billion",
+                "$2.7 Billion",
+                "$956 Million"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Where is Apple Inc. headquartered?",
+            "choices": [
+                "Redwood City, California",
+                "Redmond, Washington",
+                "Santa Monica, CA",
+                "Cupertino, California"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What is the romanized Arabic word for \"moon\"?",
+            "choices": [
+                "Najma",
+                "Kawkab",
+                "Qamar",
+                "Shams"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Which of the following card games revolves around numbers and basic math?",
+            "choices": [
+                "Uno",
+                "Go Fish",
+                "Munchkin",
+                "Twister"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "The term \"scientist\" was coined in which year?",
+            "choices": [
+                "1933",
+                "1942",
+                "1833",
+                "1796"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What kind of aircraft was developed by Igor Sikorsky in the United States in 1942?",
+            "choices": [
+                "Stealth Blimp",
+                "Helicopter",
+                "Space Capsule",
+                "Jet"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What is the profession of Elon Musk's mom, Maye Musk?",
+            "choices": [
+                "Professor",
+                "Biologist",
+                "Musician",
+                "Model"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What is the shape of the toy invented by Hungarian professor Ern\u0151 Rubik?",
+            "choices": [
+                "Sphere",
+                "Pyramid",
+                "Cube",
+                "Cylinder"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Francis Bacon died from a fatal case of pneumonia while he was attempting to preserve meat by stuffing a chicken with snow.",
+            "choices": [
+                "True",
+                "False"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Which sign of the zodiac comes between Virgo and Scorpio?",
+            "choices": [
+                "Capricorn",
+                "Taurus",
+                "Libra",
+                "Gemini"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "The Fields Medal, one of the most sought after awards in mathematics, is awarded every how many years?",
+            "choices": [
+                "6",
+                "5",
+                "4",
+                "3"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "You can legally drink alcohol while driving in Mississippi.",
+            "choices": [
+                "True",
+                "False"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Dihydrogen Monoxide was banned due to health risks after being discovered in 1983 inside swimming pools and drinking water.",
+            "choices": [
+                "True",
+                "False"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What is on display in the Madame Tussaud's museum in London?",
+            "choices": [
+                "Designer clothing",
+                "Unreleased film reels",
+                "Vintage cars",
+                "Wax sculptures"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What is the name of the very first video uploaded to YouTube?",
+            "choices": [
+                "Me at the zoo",
+                "tribute",
+                "Her new puppy from great grandpa vern.",
+                "carrie rides a truck"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What are Panama hats made out of?",
+            "choices": [
+                "Flax",
+                "Hemp",
+                "Silk",
+                "Straw"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Who invented Pastafarianism?",
+            "choices": [
+                "Bill Nye",
+                "Bobby Henderson",
+                "Zach Soldi",
+                "Eric Tignor"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Coca-Cola's original colour was green.",
+            "choices": [
+                "True",
+                "False"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What fast food chain has the most locations globally? ",
+            "choices": [
+                "KFC",
+                "Subway",
+                "McDonalds",
+                "Starbucks"
+            ],
+            "correct_index": 1,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Which American president appears on a one dollar bill?",
+            "choices": [
+                "Abraham Lincoln",
+                "Benjamin Franklin",
+                "George Washington",
+                "Thomas Jefferson"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "According to the nursery rhyme, what fruit did Little Jack Horner pull out of his Christmas pie?",
+            "choices": [
+                "Peach",
+                "Apple",
+                "Plum",
+                "Pear"
+            ],
+            "correct_index": 2,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "When was the Playstation 3 released?",
+            "choices": [
+                "December 25, 2007",
+                "January 8, 2007",
+                "July 16, 2006",
+                "November 11, 2006"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Which restaurant's mascot is a clown?",
+            "choices": [
+                "McDonald's",
+                "Whataburger",
+                "Sonic",
+                "Burger King"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "What airline was the owner of the plane that crashed off the coast of Nova Scotia in 1998?",
+            "choices": [
+                "British Airways",
+                "Air France",
+                "TWA",
+                "Swiss Air"
+            ],
+            "correct_index": 3,
+            "category": "General Knowledge"
+        },
+        {
+            "question": "Virgin Trains, Virgin Atlantic and Virgin Racing, are all companies owned by which famous entrepreneur?   ",
+            "choices": [
+                "Richard Branson",
+                "Bill Gates",
+                "Alan Sugar",
+                "Donald Trump"
+            ],
+            "correct_index": 0,
+            "category": "General Knowledge"
+        }
+    ],
+    "Gaming": []
+}
