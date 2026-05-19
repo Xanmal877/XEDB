@@ -104,11 +104,12 @@ class Music(commands.Cog):
         self.user_last_channel = {}
         self.active_views = []
         self.local_files_cache = []
-        self.refresh_local_files_cache()
         self.search_lock = asyncio.Lock()
 
+        # Ensure Songs directory exists BEFORE scanning it
         if not os.path.exists("Songs"):
             os.makedirs("Songs")
+        self.refresh_local_files_cache()
 
     def refresh_local_files_cache(self):
         self.local_files_cache = [
@@ -189,9 +190,10 @@ class Music(commands.Cog):
             await voice_client.disconnect()
             self.current_tracks.pop(guild_id, None)
             self.queues.pop(guild_id, None)
-            channel = self.user_last_channel.get(guild_id)
+            self.repeat_modes.pop(guild_id, None)
+            channel = self.user_last_channel.pop(guild_id, None)
             if channel:
-                await channel.send("✅ Queue finished. Disconnecting...", ephemeral=True)
+                await channel.send("✅ Queue finished. Disconnecting...")
 
     async def _handle_playback_error(self, guild_id: int, error: str):
         channel = self.user_last_channel.get(guild_id)
