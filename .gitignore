@@ -7,3 +7,8 @@ updatebot.bat
 runbot.bat
 /.venv
 DataFiles/quiz-data.json
+cookies.txt
+bot.log
+bot-error.log
+Songs/
+__pycache__/

@@ -104,11 +104,14 @@ class Music(commands.Cog):
         self.user_last_channel = {}
         self.active_views = []
         self.local_files_cache = []
-        self.refresh_local_files_cache()
         self.search_lock = asyncio.Lock()
+        self._fail_counters = {}  # guild_id -> consecutive failure count
+        self._alone_timers = {}   # guild_id -> asyncio.Task for auto-disconnect
 
+        # Ensure Songs directory exists BEFORE scanning it
         if not os.path.exists("Songs"):
             os.makedirs("Songs")
+        self.refresh_local_files_cache()
 
     def refresh_local_files_cache(self):
         self.local_files_cache = [
@@ -142,56 +145,88 @@ class Music(commands.Cog):
 
     async def _play_next(self, guild_id: int):
         voice_client = await self._get_voice_client(guild_id)
-        if not voice_client:
+        if not voice_client or not voice_client.is_connected():
             return
 
         queue = self.queues.get(guild_id, [])
         repeat_mode = self.repeat_modes.get(guild_id, RepeatMode.NONE)
+        current = self.current_tracks.get(guild_id)
 
-        if repeat_mode == RepeatMode.TRACK and self.current_tracks.get(guild_id):
-            queue.insert(0, self.current_tracks[guild_id])
+        # If repeat track is failing repeatedly, bail out
+        fail_count = self._fail_counters.get(guild_id, 0)
+        if repeat_mode == RepeatMode.TRACK and current and fail_count >= 3:
+            await self._handle_playback_error(guild_id, "Track failed 3 times. Disabling repeat.")
+            self.repeat_modes[guild_id] = RepeatMode.NONE
+            self._fail_counters[guild_id] = 0
+            return
+
+        if repeat_mode == RepeatMode.TRACK and current:
+            queue.insert(0, current)
 
         if queue:
             track = queue.pop(0)
             self.current_tracks[guild_id] = track
+            source = None
 
             try:
                 source = FFmpegPCMAudio(
                     track.source,
                     before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2",
-                    options="-vn -b:a 128k -threads 4"  
+                    options="-vn -b:a 128k -threads 4"
                 )
+
+                # Guard against disconnect race
+                if not voice_client.is_connected():
+                    if source:
+                        source.cleanup()
+                    return
 
                 def after_playback(error):
                     if error:
+                        self._fail_counters[guild_id] = self._fail_counters.get(guild_id, 0) + 1
                         print(f"Playback error: {error}")
+                    else:
+                        self._fail_counters[guild_id] = 0
                     asyncio.run_coroutine_threadsafe(
                         self._play_next(guild_id),
                         self.client.loop
                     )
 
                 voice_client.play(source, after=after_playback)
-                voice_client.source = PCMVolumeTransformer(voice_client.source, self.volume_levels.get(guild_id, 0.5))
-                
+                voice_client.source = PCMVolumeTransformer(
+                    voice_client.source,
+                    self.volume_levels.get(guild_id, 0.5)
+                )
+
                 channel = self.user_last_channel.get(guild_id)
                 if channel:
-                    await channel.send(f"🎶 Now playing: **{track.title}** (Requested by {track.requester.mention})")
+                    await channel.send(
+                        f"🎶 Now playing: **{track.title}** (Requested by {track.requester.mention})"
+                    )
 
             except Exception as e:
+                self._fail_counters[guild_id] = self._fail_counters.get(guild_id, 0) + 1
+                if source:
+                    try:
+                        source.cleanup()
+                    except Exception:
+                        pass
                 await self._handle_playback_error(guild_id, f"Failed to play: {str(e)}")
                 await self._play_next(guild_id)
         else:
             await self._disconnect_voice(guild_id)
 
     async def _disconnect_voice(self, guild_id: int):
+        self._cancel_alone_timer(guild_id)
         voice_client = await self._get_voice_client(guild_id)
         if voice_client:
             await voice_client.disconnect()
             self.current_tracks.pop(guild_id, None)
             self.queues.pop(guild_id, None)
-            channel = self.user_last_channel.get(guild_id)
+            self.repeat_modes.pop(guild_id, None)
+            channel = self.user_last_channel.pop(guild_id, None)
             if channel:
-                await channel.send("✅ Queue finished. Disconnecting...", ephemeral=True)
+                await channel.send("✅ Queue finished. Disconnecting...")
 
     async def _handle_playback_error(self, guild_id: int, error: str):
         channel = self.user_last_channel.get(guild_id)
@@ -275,9 +310,47 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        # Bot got kicked / disconnected
         if member == self.client.user and not after.channel:
             self.current_tracks.pop(member.guild.id, None)
             self.queues.pop(member.guild.id, None)
+            self._cancel_alone_timer(member.guild.id)
+            return
+
+        # Auto-disconnect when bot is left alone in a voice channel
+        guild_id = member.guild.id
+        voice_client = await self._get_voice_client(guild_id)
+        if not voice_client or not voice_client.is_connected():
+            return
+
+        bot_channel = voice_client.channel
+        # Someone left the bot's channel
+        if before.channel == bot_channel and after.channel != bot_channel:
+            human_count = sum(1 for m in bot_channel.members if not m.bot)
+            if human_count == 0:
+                self._start_alone_timer(guild_id)
+            else:
+                self._cancel_alone_timer(guild_id)
+        # Someone joined the bot's channel
+        elif after.channel == bot_channel and before.channel != bot_channel:
+            self._cancel_alone_timer(guild_id)
+
+    def _start_alone_timer(self, guild_id: int):
+        self._cancel_alone_timer(guild_id)
+
+        async def _disconnect_after_delay():
+            await asyncio.sleep(60)
+            await self._disconnect_voice(guild_id)
+            channel = self.user_last_channel.get(guild_id)
+            if channel:
+                await channel.send("👋 Left voice channel after being alone for 60 seconds.")
+
+        self._alone_timers[guild_id] = asyncio.create_task(_disconnect_after_delay())
+
+    def _cancel_alone_timer(self, guild_id: int):
+        task = self._alone_timers.pop(guild_id, None)
+        if task and not task.done():
+            task.cancel()
 
     @app_commands.command(name="play_music", description="Play music from YouTube or local files")
     @app_commands.describe(query="YouTube URL/search query or local file name")
@@ -370,36 +443,94 @@ class Music(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-    # @app_commands.command(name="skip", description="Skip the current track")
-    # async def skip(self, interaction: discord.Interaction):
-    #     voice_client = await self._get_voice_client(interaction.guild_id)
-    #     if voice_client and voice_client.is_playing():
-    #         voice_client.stop()
-    #         await interaction.response.send_message("⏭ Skipped current track")
-    #     else:
-    #         await interaction.response.send_message("❌ Nothing is currently playing")
+    @app_commands.command(name="skip", description="Skip the current track")
+    async def skip(self, interaction: discord.Interaction):
+        voice_client = await self._get_voice_client(interaction.guild_id)
+        if voice_client and voice_client.is_playing():
+            voice_client.stop()
+            await interaction.response.send_message("⏭ Skipped current track")
+        else:
+            await interaction.response.send_message("❌ Nothing is currently playing")
 
-    # @app_commands.command(name="stop", description="Stop playback and clear queue")
-    # async def stop(self, interaction: discord.Interaction):
-    #     guild_id = interaction.guild_id
-    #     self.queues[guild_id] = []
-    #     voice_client = await self._get_voice_client(guild_id)
-    #     if voice_client:
-    #         voice_client.stop()
-    #         await self._disconnect_voice(guild_id)
-    #     await interaction.response.send_message("⏹ Stopped playback and cleared queue")
+    @app_commands.command(name="stop", description="Stop playback and clear queue")
+    async def stop(self, interaction: discord.Interaction):
+        guild_id = interaction.guild_id
+        self.queues[guild_id] = []
+        voice_client = await self._get_voice_client(guild_id)
+        if voice_client:
+            voice_client.stop()
+            await self._disconnect_voice(guild_id)
+        await interaction.response.send_message("⏹ Stopped playback and cleared queue")
 
-    # @app_commands.command(name="volume", description="Adjust playback volume (0-100)")
-    # @app_commands.describe(level="Volume level (0-100)")
-    # async def volume(self, interaction: discord.Interaction, level: app_commands.Range[int, 0, 100]):
-    #     guild_id = interaction.guild_id
-    #     self.volume_levels[guild_id] = level / 100
-    #     voice_client = await self._get_voice_client(guild_id)
-    #     if voice_client and voice_client.source:
-    #         voice_client.source.volume = self.volume_levels[guild_id]
-    #         await interaction.response.send_message(f"🔊 Volume set to {level}%")
-    #     else:
-    #         await interaction.response.send_message("❌ Nothing is currently playing")
+    @app_commands.command(name="volume", description="Adjust playback volume (0-100)")
+    @app_commands.describe(level="Volume level (0-100)")
+    async def volume(self, interaction: discord.Interaction, level: app_commands.Range[int, 0, 100]):
+        guild_id = interaction.guild_id
+        self.volume_levels[guild_id] = level / 100
+        voice_client = await self._get_voice_client(guild_id)
+        if voice_client and voice_client.source and isinstance(voice_client.source, PCMVolumeTransformer):
+            voice_client.source.volume = self.volume_levels[guild_id]
+            await interaction.response.send_message(f"🔊 Volume set to {level}%")
+        else:
+            await interaction.response.send_message(f"🔊 Volume set to {level}% (will apply to next track)")
+
+    @app_commands.command(name="pause", description="Pause playback")
+    async def pause(self, interaction: discord.Interaction):
+        voice_client = await self._get_voice_client(interaction.guild_id)
+        if voice_client and voice_client.is_playing():
+            voice_client.pause()
+            await interaction.response.send_message("⏸ Paused")
+        else:
+            await interaction.response.send_message("❌ Nothing is currently playing")
+
+    @app_commands.command(name="resume", description="Resume playback")
+    async def resume(self, interaction: discord.Interaction):
+        voice_client = await self._get_voice_client(interaction.guild_id)
+        if voice_client and voice_client.is_paused():
+            voice_client.resume()
+            await interaction.response.send_message("▶ Resumed")
+        else:
+            await interaction.response.send_message("❌ Nothing is paused")
+
+    @app_commands.command(name="loop", description="Toggle repeat mode")
+    @app_commands.describe(mode="Repeat mode: off, track, or queue")
+    async def loop(self, interaction: discord.Interaction, mode: str):
+        guild_id = interaction.guild_id
+        mode_map = {"off": RepeatMode.NONE, "track": RepeatMode.TRACK, "queue": RepeatMode.QUEUE}
+        parsed = mode_map.get(mode.lower())
+        if parsed is None:
+            await interaction.response.send_message("❌ Mode must be 'off', 'track', or 'queue'", ephemeral=True)
+            return
+        self.repeat_modes[guild_id] = parsed
+        label = {RepeatMode.NONE: "off", RepeatMode.TRACK: "track", RepeatMode.QUEUE: "queue"}[parsed]
+        await interaction.response.send_message(f"🔁 Repeat mode set to **{label}**")
+
+    @app_commands.command(name="shuffle", description="Shuffle the current queue")
+    async def shuffle(self, interaction: discord.Interaction):
+        guild_id = interaction.guild_id
+        queue = self.queues.get(guild_id, [])
+        if len(queue) < 2:
+            await interaction.response.send_message("❌ Need at least 2 tracks to shuffle", ephemeral=True)
+            return
+        import random as rnd
+        rnd.shuffle(queue)
+        self.queues[guild_id] = queue
+        await interaction.response.send_message("🔀 Queue shuffled")
+
+    @app_commands.command(name="remove", description="Remove a track from the queue by position")
+    @app_commands.describe(position="Queue position to remove (1-based)")
+    async def remove(self, interaction: discord.Interaction, position: app_commands.Range[int, 1, 100]):
+        guild_id = interaction.guild_id
+        queue = self.queues.get(guild_id, [])
+        if not queue:
+            await interaction.response.send_message("❌ Queue is empty", ephemeral=True)
+            return
+        if position > len(queue):
+            await interaction.response.send_message(f"❌ Queue only has {len(queue)} tracks", ephemeral=True)
+            return
+        removed = queue.pop(position - 1)
+        self.queues[guild_id] = queue
+        await interaction.response.send_message(f"🗑 Removed **{removed.title}** from queue")
 
 async def setup(client: commands.Bot):
     await client.add_cog(Music(client))
