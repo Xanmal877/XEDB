@@ -1,4 +1,31 @@
+import sys
+import subprocess
+import importlib.util
 import os
+
+# ── Bootstrap: auto-install missing dependencies ──────────────────────
+def _ensure_deps():
+    """Check for required packages and pip-install anything missing."""
+    required = {
+        "discord": "discord.py",
+        "dotenv": "python-dotenv",
+        "ollama": "ollama",
+    }
+    missing = []
+    for module, package in required.items():
+        if importlib.util.find_spec(module) is None:
+            missing.append(package)
+
+    if missing:
+        print(f"[Bootstrap] Missing packages: {missing}")
+        print("[Bootstrap] Installing...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+        print("[Bootstrap] Done. Restarting with new packages...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+_ensure_deps()
+
+# ── Third-party imports (safe now that deps are guaranteed) ──────────
 import asyncio
 import discord
 from discord.ext import commands
