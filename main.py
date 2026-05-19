@@ -11,6 +11,7 @@ def _ensure_deps():
         "dotenv": "python-dotenv",
         "ollama": "ollama",
         "yt_dlp": "yt-dlp",
+        "pytz": "pytz",
     }
     missing = []
     for module, package in required.items():
