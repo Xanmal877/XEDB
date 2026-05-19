@@ -11,3 +11,4 @@ cookies.txt
 bot.log
 bot-error.log
 Songs/
+__pycache__/
