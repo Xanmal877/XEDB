@@ -105,6 +105,8 @@ class Music(commands.Cog):
         self.active_views = []
         self.local_files_cache = []
         self.search_lock = asyncio.Lock()
+        self._fail_counters = {}  # guild_id -> consecutive failure count
+        self._alone_timers = {}   # guild_id -> asyncio.Task for auto-disconnect
 
         # Ensure Songs directory exists BEFORE scanning it
         if not os.path.exists("Songs"):
@@ -143,48 +145,79 @@ class Music(commands.Cog):
 
     async def _play_next(self, guild_id: int):
         voice_client = await self._get_voice_client(guild_id)
-        if not voice_client:
+        if not voice_client or not voice_client.is_connected():
             return
 
         queue = self.queues.get(guild_id, [])
         repeat_mode = self.repeat_modes.get(guild_id, RepeatMode.NONE)
+        current = self.current_tracks.get(guild_id)
 
-        if repeat_mode == RepeatMode.TRACK and self.current_tracks.get(guild_id):
-            queue.insert(0, self.current_tracks[guild_id])
+        # If repeat track is failing repeatedly, bail out
+        fail_count = self._fail_counters.get(guild_id, 0)
+        if repeat_mode == RepeatMode.TRACK and current and fail_count >= 3:
+            await self._handle_playback_error(guild_id, "Track failed 3 times. Disabling repeat.")
+            self.repeat_modes[guild_id] = RepeatMode.NONE
+            self._fail_counters[guild_id] = 0
+            return
+
+        if repeat_mode == RepeatMode.TRACK and current:
+            queue.insert(0, current)
 
         if queue:
             track = queue.pop(0)
             self.current_tracks[guild_id] = track
+            source = None
 
             try:
                 source = FFmpegPCMAudio(
                     track.source,
                     before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 2",
-                    options="-vn -b:a 128k -threads 4"  
+                    options="-vn -b:a 128k -threads 4"
                 )
+
+                # Guard against disconnect race
+                if not voice_client.is_connected():
+                    if source:
+                        source.cleanup()
+                    return
 
                 def after_playback(error):
                     if error:
+                        self._fail_counters[guild_id] = self._fail_counters.get(guild_id, 0) + 1
                         print(f"Playback error: {error}")
+                    else:
+                        self._fail_counters[guild_id] = 0
                     asyncio.run_coroutine_threadsafe(
                         self._play_next(guild_id),
                         self.client.loop
                     )
 
                 voice_client.play(source, after=after_playback)
-                voice_client.source = PCMVolumeTransformer(voice_client.source, self.volume_levels.get(guild_id, 0.5))
-                
+                voice_client.source = PCMVolumeTransformer(
+                    voice_client.source,
+                    self.volume_levels.get(guild_id, 0.5)
+                )
+
                 channel = self.user_last_channel.get(guild_id)
                 if channel:
-                    await channel.send(f"🎶 Now playing: **{track.title}** (Requested by {track.requester.mention})")
+                    await channel.send(
+                        f"🎶 Now playing: **{track.title}** (Requested by {track.requester.mention})"
+                    )
 
             except Exception as e:
+                self._fail_counters[guild_id] = self._fail_counters.get(guild_id, 0) + 1
+                if source:
+                    try:
+                        source.cleanup()
+                    except Exception:
+                        pass
                 await self._handle_playback_error(guild_id, f"Failed to play: {str(e)}")
                 await self._play_next(guild_id)
         else:
             await self._disconnect_voice(guild_id)
 
     async def _disconnect_voice(self, guild_id: int):
+        self._cancel_alone_timer(guild_id)
         voice_client = await self._get_voice_client(guild_id)
         if voice_client:
             await voice_client.disconnect()
@@ -277,9 +310,47 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        # Bot got kicked / disconnected
         if member == self.client.user and not after.channel:
             self.current_tracks.pop(member.guild.id, None)
             self.queues.pop(member.guild.id, None)
+            self._cancel_alone_timer(member.guild.id)
+            return
+
+        # Auto-disconnect when bot is left alone in a voice channel
+        guild_id = member.guild.id
+        voice_client = await self._get_voice_client(guild_id)
+        if not voice_client or not voice_client.is_connected():
+            return
+
+        bot_channel = voice_client.channel
+        # Someone left the bot's channel
+        if before.channel == bot_channel and after.channel != bot_channel:
+            human_count = sum(1 for m in bot_channel.members if not m.bot)
+            if human_count == 0:
+                self._start_alone_timer(guild_id)
+            else:
+                self._cancel_alone_timer(guild_id)
+        # Someone joined the bot's channel
+        elif after.channel == bot_channel and before.channel != bot_channel:
+            self._cancel_alone_timer(guild_id)
+
+    def _start_alone_timer(self, guild_id: int):
+        self._cancel_alone_timer(guild_id)
+
+        async def _disconnect_after_delay():
+            await asyncio.sleep(60)
+            await self._disconnect_voice(guild_id)
+            channel = self.user_last_channel.get(guild_id)
+            if channel:
+                await channel.send("👋 Left voice channel after being alone for 60 seconds.")
+
+        self._alone_timers[guild_id] = asyncio.create_task(_disconnect_after_delay())
+
+    def _cancel_alone_timer(self, guild_id: int):
+        task = self._alone_timers.pop(guild_id, None)
+        if task and not task.done():
+            task.cancel()
 
     @app_commands.command(name="play_music", description="Play music from YouTube or local files")
     @app_commands.describe(query="YouTube URL/search query or local file name")
