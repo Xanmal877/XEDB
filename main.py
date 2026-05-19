@@ -10,6 +10,7 @@ def _ensure_deps():
         "discord": "discord.py",
         "dotenv": "python-dotenv",
         "ollama": "ollama",
+        "yt_dlp": "yt-dlp",
     }
     missing = []
     for module, package in required.items():
@@ -24,6 +25,28 @@ def _ensure_deps():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 _ensure_deps()
+
+# ── Interactive .env setup ────────────────────────────────────────────
+ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if not os.path.exists(ENV_PATH):
+    print("\n=== First-time setup ===")
+    print("Create Discord bots at https://discord.com/developers/applications")
+    print("(Leave a field blank to skip it. You can edit .env later.)\n")
+
+    tama_token = input("Tama bot token: ").strip()
+    saki_token = input("Saki bot token: ").strip()
+    chat_channel = input("Chat channel name [general]: ").strip() or "general"
+
+    lines = []
+    if tama_token:
+        lines.append(f"TamaToken={tama_token}")
+    if saki_token:
+        lines.append(f"SakiToken={saki_token}")
+    lines.append(f"ChatChannel={chat_channel}")
+
+    with open(ENV_PATH, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[Bootstrap] Created {ENV_PATH}\n")
 
 # ── Third-party imports (safe now that deps are guaranteed) ──────────
 import asyncio
