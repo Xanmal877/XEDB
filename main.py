@@ -59,6 +59,48 @@ import ollama
 import json
 
 load_dotenv()
+
+# ── External dependency health checks ─────────────────────────────────
+def _check_ollama():
+    """Check if Ollama is running locally."""
+    import urllib.request
+    try:
+        urllib.request.urlopen("http://localhost:11434", timeout=2)
+        return True
+    except Exception:
+        return False
+
+def _check_ffmpeg():
+    """Check if ffmpeg is installed on the system."""
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        return True
+    except Exception:
+        return False
+
+def _offer_open(url: str, name: str):
+    """Ask user if they want to open a download page."""
+    try:
+        response = input(f"Open {name} download page in browser? [y/N]: ").strip().lower()
+        if response in ("y", "yes"):
+            import webbrowser
+            webbrowser.open(url)
+            print(f"[Bootstrap] Opened {url}")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+if not _check_ollama():
+    print("\n⚠️  Ollama is not running on http://localhost:11434")
+    print("   The bot needs Ollama with models 'Tamaneko' and 'Autumn'.")
+    _offer_open("https://ollama.com/download", "Ollama")
+    print("   Start Ollama and try again.\n")
+
+if not _check_ffmpeg():
+    print("\n⚠️  ffmpeg is not installed or not in PATH")
+    print("   The MusicCog needs ffmpeg for voice channel audio playback.")
+    _offer_open("https://ffmpeg.org/download.html", "ffmpeg")
+    print("   Install ffmpeg and try again.\n")
+
 parser = argparse.ArgumentParser(description="Run TamaBot or SakiBot")
 parser.add_argument("bot", choices=["tama", "saki"], help="Specify the bot to run (tama or saki)", nargs="?", default="tama")
 args = parser.parse_args()
