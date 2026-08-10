@@ -34,6 +34,7 @@ On first run the bot will:
 3. Write these to `.env`
 4. Pull `gemma4` from Ollama if it is not already local
 5. Warn you if Ollama or ffmpeg are missing and offer to open their download pages
+
 ## Environment Variables
 
 Create `.env` manually or let the first-run wizard handle it:
@@ -43,6 +44,8 @@ Create `.env` manually or let the first-run wizard handle it:
 | `BotToken` | Yes | Discord bot token |
 | `ChatChannel` | No | Channel name the bot listens in (default: `general`) |
 | `DefaultPersonality` | No | `tama` or `saki` (default: `tama`) |
+| `BotOwnerId` | No | Discord user ID allowed to use owner-restricted commands (falls back to guild owner/admin) |
+| `OllamaModel` | No | Ollama model for AI responses (default: `gemma4`) |
 
 ## Cogs
 
@@ -52,12 +55,16 @@ Slash commands for server management. Restricted to allowed users and standard D
 | Command | Permission | Description |
 |---|---|---|
 | `/ping` | Anyone | Bot latency in ms |
+| `/cogs` | Anyone | List loaded cogs |
+| `/modhelp` | Anyone | List moderation commands |
 | `/purge <count>` | Manage Messages | Bulk delete messages |
-| `/kick <member>` | Kick Members | Kick a user |
-| `/ban <member>` | Ban Members | Ban a user |
-| `/unban <user_id>` | Ban Members | Unban a user by ID |
+| `/kick <member> [reason]` | Kick Members | Kick a user |
+| `/ban <member> [reason]` | Ban Members | Ban a user |
+| `/unban <user_id> [reason]` | Ban Members | Unban a user by ID |
+| `/timeout <member> <minutes> [reason]` | Moderate Members | Temporarily timeout a user |
+| `/untimeout <member> [reason]` | Moderate Members | Remove a user's timeout |
 | `/speak <message> [channel]` | Manage Messages | Send a message as the bot |
-| `/reload_cogs` | Allowed users | Hot-reload MusicCog and QuizCog |
+| `/reload_cogs` | Allowed users | Hot-reload all loaded cogs |
 
 ### MusicCog
 Voice channel music playback via YouTube (yt-dlp) or local files from the `Songs/` directory.
@@ -81,6 +88,7 @@ Voice channel music playback via YouTube (yt-dlp) or local files from the `Songs
 - Auto-disconnects after 60 seconds if left alone in a voice channel
 - Reconnect + retry logic with failure-rate limiting
 - Per-guild queue, volume, and repeat mode state
+- Rejects URLs that point to private/reserved addresses
 
 ### RPGCog
 Discord-native turn-based RPG. Each user has persistent stats, inventory, and exploration history.
@@ -95,11 +103,13 @@ Discord-native turn-based RPG. Each user has persistent stats, inventory, and ex
 **Systems**
 - **Explore** — find gold, items, monsters, or nothing. 5-second cooldown.
 - **Battle** — attack, use skills, or flee. Skills unlock at levels 2 and 4.
-- **Shop** — buy potions, weapons, armor, and rare artifacts.
-- **Level up** — XP gain scales with monster difficulty. Stats increase automatically.
-- **Regen** — stamina and mana regenerate by 10 per minute while the cog is loaded.
+- **Skills** — Power Strike, Mana Shield, Fireball, and Dodge. Each costs stamina or mana.
+- **Shop** — buy potions, weapons, armor, and rare artifacts. Stock restocks periodically.
+- **Level up** — XP gain scales with monster difficulty. Stats increase automatically on level-up.
+- **Regen** — stamina and mana regenerate by 10 per minute while the cog is loaded; defeated players slowly recover health.
+- **Balance** — encountered monsters are scaled to your level; battles have a 10-second cooldown.
 
-**Files**: player data is saved to `DataFiles/rpgFiles/players.json`.
+**Files**: player data is saved to `DataFiles/rpgFiles/players.json` (runtime, git-ignored).
 
 ### QuizCog
 Scheduled daily trivia from [OpenTDB](https://opentdb.com). Runs automatically. No user setup required beyond the channel.
@@ -121,22 +131,25 @@ Scheduled daily trivia from [OpenTDB](https://opentdb.com). Runs automatically. 
 - **6:00 PM** (Arizona time): Correct answer revealed, points awarded
 - Automatically fetches new questions from OpenTDB when running low
 
-**Files**: quiz state, questions, used questions, and points are saved under `DataFiles/`.
+**Files**: quiz state, questions, used questions, and points are saved under `DataFiles/` (runtime, git-ignored).
 
 ## Data Files (Persistent)
 
-These JSON files are created at runtime and persist between restarts:
+These JSON files are created at runtime and persist between restarts. They are **git-ignored** and must never be committed:
 
 ```
 DataFiles/
   quiz-data.json        # Quiz schedule, channel, session token, points
   questions.json        # Active question pool per category
   used-questions.json   # Already-used questions (rotated back in by /reset_questions)
+  points.json           # Legacy/legacy score file (deprecated)
   rpgFiles/
     players.json        # All RPG character data
-    monsters.json       # Monster definitions
+    monsters.json       # Monster definitions (seeded with defaults)
     shop-items.json     # Shop inventory and stock
 ```
+
+`DataFiles/GameList.json` is the one tracked data file — it lists games used for the bot's rotating activity status.
 
 ## Runtime Files (Git Ignored)
 
@@ -147,11 +160,26 @@ These are generated at runtime and should never be committed:
 | `Songs/` | Local music downloads and uploads |
 | `bot.log` | Normal bot logging |
 | `bot-error.log` | Error logging |
-| `cookies.txt` | yt-dlp YouTube session cookies |
+| `cookies.txt` | yt-dlp YouTube session cookies (used automatically if present) |
+| `logs/` | Reserved for chat log storage |
+
+## Logging
+
+Logs are written to `bot.log` (info and above) and `bot-error.log` (errors only), plus the console. Configuration lives in `main.py` (`_setup_logging`).
+
+## Development
+
+Install dev dependencies and run tests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check Cogs/ main.py
+```
 
 ## Notes
 
-- The legacy `python main.py tama` argument still works but is ignored. Personality is automatic.
+- The legacy `python main.py tama` argument no longer exists; personality is automatic based on trigger words.
 - If Ollama is not running, the bot prints a warning and continues. AI responses will fail until Ollama starts.
 - If ffmpeg is missing, MusicCog commands that need voice playback will fail gracefully with a user-visible message.
-- The bot uses ` discord.Intents.all()`. Make sure your bot's gateway intents are enabled in the Discord developer portal.
+- The bot uses `discord.Intents.all()`. Make sure your bot's gateway intents are enabled in the Discord developer portal.
