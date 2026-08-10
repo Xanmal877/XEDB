@@ -1,14 +1,23 @@
-
 .env
-/Discordbotenv
+/DiscordbotEnv
 /Cogs/__pycache__
 /venv
 updatebot.bat
 runbot.bat
 /.venv
+__pycache__/
+
+# Runtime data (generated at runtime, never commit)
 DataFiles/quiz-data.json
+DataFiles/points.json
+DataFiles/questions.json
+DataFiles/used-questions.json
+DataFiles/rpgFiles/players.json
+DataFiles/rpgFiles/shop-items.json
+
+# Runtime artifacts
+logs/
+Songs/
 cookies.txt
 bot.log
 bot-error.log
-Songs/
-__pycache__/
