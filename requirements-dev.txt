@@ -1,0 +1,5 @@
+# Development-only dependencies (tests, linting). Not required at runtime.
+-r requirements.txt
+pytest
+pytest-asyncio
+ruff
