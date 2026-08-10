@@ -1,0 +1,1 @@
+"""XEDB cogs package."""
