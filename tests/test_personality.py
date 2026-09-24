@@ -1,6 +1,6 @@
 """Tests for personality trigger matching."""
 
-from main import mentioned_personality
+from bot import mentioned_personality
 
 
 def test_tama_word():
