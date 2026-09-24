@@ -9,13 +9,10 @@ import config
 
 logger = logging.getLogger(__name__)
 
-OWNER_ID = config.BOT_OWNER_ID
-
 
 def _is_owner_or_admin(interaction: discord.Interaction) -> bool:
     """Check if the user is the configured owner, guild owner, or has administrator perms."""
-    # Configured owner ID from .env
-    if OWNER_ID is not None and interaction.user.id == OWNER_ID:
+    if config.BOT_OWNER_ID is not None and interaction.user.id == config.BOT_OWNER_ID:
         return True
     # Guild owner fallback
     if interaction.guild and interaction.guild.owner_id == interaction.user.id:

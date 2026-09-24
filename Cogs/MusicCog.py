@@ -1,11 +1,7 @@
 import asyncio
-import ipaddress
 import logging
 import os
 import random
-import urllib.parse
-from dataclasses import dataclass
-from enum import Enum
 
 import discord
 from discord import FFmpegPCMAudio, PCMVolumeTransformer, app_commands
@@ -13,116 +9,17 @@ from discord.ext import commands
 from yt_dlp import YoutubeDL
 
 import config
-from Cogs import util
+from Cogs.music_models import RepeatMode, Track
+from Cogs.music_url import is_blocked_url
+from Cogs.music_views import YTSearchView
 
 logger = logging.getLogger(__name__)
 
-VIEW_TIMEOUT = 30
 MAX_SEARCH_RESULTS = 5
 QUEUE_DISPLAY_LIMIT = 10
 REPEAT_MAX_FAILURES = 3
 EXTRACT_TIMEOUT = 30
 DEFAULT_VOLUME = 0.5
-
-
-def is_blocked_url(url: str) -> bool:
-    parsed = urllib.parse.urlsplit(url)
-    host = parsed.hostname
-    if not host:
-        return True
-    if host.lower() in {"localhost", "localhost.localdomain"}:
-        return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local or ip.is_multicast or ip.is_unspecified
-
-
-class RepeatMode(Enum):
-    NONE = 0
-    TRACK = 1
-    QUEUE = 2
-
-
-@dataclass
-class Track:
-    source: str
-    title: str
-    url: str
-    requester: discord.Member
-
-
-class YTSearchView(discord.ui.View):
-    def __init__(self, tracks, cog, guild_id):
-        super().__init__(timeout=VIEW_TIMEOUT)
-        self.tracks = tracks
-        self.cog = cog
-        self.guild_id = guild_id
-        self.interaction_lock = asyncio.Lock()
-        self.message = None
-
-        # Add buttons with song titles
-        for idx, track in enumerate(tracks):
-            # Truncate title to 75 chars to avoid Discord's 80-character button limit
-            shortened_title = (track.title[:75] + "...") if len(track.title) > 75 else track.title
-            button = discord.ui.Button(
-                label=shortened_title,
-                style=discord.ButtonStyle.secondary,
-                custom_id=str(idx),  # Store track index in custom_id
-            )
-            button.callback = self.create_callback(idx)
-            self.add_item(button)
-
-    def create_callback(self, index: int):
-        async def button_callback(interaction: discord.Interaction):
-            try:
-                await interaction.response.defer(ephemeral=True)
-            except discord.errors.NotFound:
-                return
-
-            async with self.interaction_lock:
-                try:
-                    for item in self.children:
-                        item.disabled = True
-                    if self.message:
-                        await self.message.edit(content="✅ Track selected", view=None)
-
-                    selected_track = self.tracks[index]
-                    new_tracks = await self.cog._ytdl_extract(selected_track.url, selected_track.requester)
-
-                    if not new_tracks:
-                        await interaction.followup.send("❌ Track unavailable", ephemeral=True)
-                        return
-
-                    actual_track = new_tracks[0]
-                    async with self.cog._guild_lock(self.guild_id):
-                        self.cog.queues.setdefault(self.guild_id, []).append(actual_track)
-                        voice_client = await self.cog._get_voice_client(self.guild_id)
-                        if voice_client and not voice_client.is_playing():
-                            await self.cog._play_next_locked(self.guild_id)
-                    await interaction.followup.send(f"🎵 Added **{actual_track.title}** to queue")
-
-                    if self in self.cog.active_views:
-                        self.cog.active_views.remove(self)
-
-                except Exception:
-                    logger.exception("PROCESSING ERROR")
-                    await interaction.followup.send("❌ Failed to process request", ephemeral=True)
-
-        return button_callback
-
-    async def on_timeout(self):
-        try:
-            for item in self.children:
-                item.disabled = True
-            if self.message:
-                await self.message.edit(view=self)
-        except discord.NotFound:
-            pass
-        finally:
-            if self in self.cog.active_views:
-                self.cog.active_views.remove(self)
 
 
 class Music(commands.Cog):
@@ -133,7 +30,6 @@ class Music(commands.Cog):
         self.repeat_modes = {}
         self.volume_levels = {}
         self.user_last_channel = {}
-        self.active_views = []
         self.local_files_cache = []
         self._fail_counters = {}  # guild_id -> consecutive failure count
         self._alone_timers = {}  # guild_id -> asyncio.Task for auto-disconnect
@@ -162,7 +58,7 @@ class Music(commands.Cog):
         self._played_tracks.pop(guild_id, None)
         self._guild_locks.pop(guild_id, None)
 
-    async def _get_voice_client(self, guild_id: int) -> discord.VoiceClient | None:
+    def _get_voice_client(self, guild_id: int) -> discord.VoiceClient | None:
         if not guild_id:
             return None
         guild = self.client.get_guild(guild_id)
@@ -175,7 +71,7 @@ class Music(commands.Cog):
             await interaction.followup.send("❌ You need to be in a voice channel!")
             return None
 
-        voice_client = await self._get_voice_client(interaction.guild_id)
+        voice_client = self._get_voice_client(interaction.guild_id)
         if voice_client:
             if voice_client.channel != interaction.user.voice.channel:
                 await voice_client.move_to(interaction.user.voice.channel)
@@ -194,7 +90,7 @@ class Music(commands.Cog):
             await self._play_next_locked(guild_id)
 
     async def _play_next_locked(self, guild_id: int):
-        voice_client = await self._get_voice_client(guild_id)
+        voice_client = self._get_voice_client(guild_id)
         if not voice_client or not voice_client.is_connected():
             return
 
@@ -278,7 +174,7 @@ class Music(commands.Cog):
 
     async def _disconnect_voice(self, guild_id: int, reason: str = "finished"):
         self._cancel_alone_timer(guild_id)
-        voice_client = await self._get_voice_client(guild_id)
+        voice_client = self._get_voice_client(guild_id)
         channel = self.user_last_channel.get(guild_id)
 
         if not voice_client or not voice_client.is_connected():
@@ -320,7 +216,7 @@ class Music(commands.Cog):
             "headers": {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept-Language": "en-US,en;q=0.9"},
         }
 
-        cookies_file = util.BASE_DIR / "cookies.txt"
+        cookies_file = config.HOME / "cookies.txt"
         if cookies_file.exists():
             ytdl_opts["cookiefile"] = str(cookies_file)
 
@@ -332,8 +228,8 @@ class Music(commands.Cog):
                 )
 
                 if is_search:
-                    return await self._process_search_results(data, requester)
-                return await self._process_direct_url(data, requester, url)
+                    return self._process_search_results(data, requester)
+                return self._process_direct_url(data, requester, url)
 
         except asyncio.TimeoutError:
             logger.warning("YTDL timeout for URL: %s", url)
@@ -342,7 +238,7 @@ class Music(commands.Cog):
             logger.exception("YTDL Error for URL: %s", url)
             return None
 
-    async def _process_search_results(self, data, requester):
+    def _process_search_results(self, data, requester):
         if not data or "entries" not in data:
             return None
 
@@ -356,7 +252,7 @@ class Music(commands.Cog):
             if entry and entry.get("id")
         ]
 
-    async def _process_direct_url(self, data, requester, original_url):
+    def _process_direct_url(self, data, requester, original_url):
         if not data:
             return None
 
@@ -376,7 +272,7 @@ class Music(commands.Cog):
             self._cleanup_guild_state(guild_id)
             return
 
-        voice_client = await self._get_voice_client(guild_id)
+        voice_client = self._get_voice_client(guild_id)
         if not voice_client or not voice_client.is_connected():
             return
 
@@ -445,7 +341,7 @@ class Music(commands.Cog):
                     ]
                     async with self._guild_lock(guild_id):
                         self.queues.setdefault(guild_id, []).extend(tracks)
-                        voice_client = await self._get_voice_client(guild_id)
+                        voice_client = self._get_voice_client(guild_id)
                         if voice_client and not voice_client.is_playing():
                             await self._play_next_locked(guild_id)
                     await interaction.followup.send(f"🎵 Added {len(tracks)} local track(s) to queue", ephemeral=True)
@@ -463,7 +359,7 @@ class Music(commands.Cog):
             if is_url:
                 async with self._guild_lock(guild_id):
                     self.queues.setdefault(guild_id, []).extend(tracks)
-                    voice_client = await self._get_voice_client(guild_id)
+                    voice_client = self._get_voice_client(guild_id)
                     if voice_client and not voice_client.is_playing():
                         await self._play_next_locked(guild_id)
                 await interaction.followup.send(f"🎵 Added **{tracks[0].title}** to queue")
@@ -471,7 +367,6 @@ class Music(commands.Cog):
 
             view = YTSearchView(tracks, self, guild_id)
             view.message = await interaction.followup.send("🎵 Select a track:", view=view, ephemeral=True)
-            self.active_views.append(view)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Error processing request: {e!s}", ephemeral=True)
@@ -512,7 +407,7 @@ class Music(commands.Cog):
     @app_commands.command(name="skip", description="Skip the current track")
     @app_commands.guild_only()
     async def skip(self, interaction: discord.Interaction):
-        voice_client = await self._get_voice_client(interaction.guild_id)
+        voice_client = self._get_voice_client(interaction.guild_id)
         if voice_client and voice_client.is_playing():
             voice_client.stop()
             await interaction.response.send_message("⏭ Skipped current track")
@@ -533,7 +428,7 @@ class Music(commands.Cog):
     async def volume(self, interaction: discord.Interaction, level: app_commands.Range[int, 0, 100]):
         guild_id = interaction.guild_id
         self.volume_levels[guild_id] = level / 100
-        voice_client = await self._get_voice_client(guild_id)
+        voice_client = self._get_voice_client(guild_id)
         if voice_client and voice_client.source and isinstance(voice_client.source, PCMVolumeTransformer):
             voice_client.source.volume = self.volume_levels[guild_id]
             await interaction.response.send_message(f"🔊 Volume set to {level}%")
@@ -543,7 +438,7 @@ class Music(commands.Cog):
     @app_commands.command(name="pause", description="Pause playback")
     @app_commands.guild_only()
     async def pause(self, interaction: discord.Interaction):
-        voice_client = await self._get_voice_client(interaction.guild_id)
+        voice_client = self._get_voice_client(interaction.guild_id)
         if voice_client and voice_client.is_playing():
             voice_client.pause()
             await interaction.response.send_message("⏸ Paused")
@@ -553,7 +448,7 @@ class Music(commands.Cog):
     @app_commands.command(name="resume", description="Resume playback")
     @app_commands.guild_only()
     async def resume(self, interaction: discord.Interaction):
-        voice_client = await self._get_voice_client(interaction.guild_id)
+        voice_client = self._get_voice_client(interaction.guild_id)
         if voice_client and voice_client.is_paused():
             voice_client.resume()
             await interaction.response.send_message("▶ Resumed")

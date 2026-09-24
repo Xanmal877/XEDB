@@ -1,6 +1,6 @@
 """Tests for MusicCog URL blocking (SSRF guard)."""
 
-from Cogs.MusicCog import is_blocked_url
+from Cogs.music_url import is_blocked_url
 
 
 def test_blocks_private_ip():

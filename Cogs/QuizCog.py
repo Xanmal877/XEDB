@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 import config
 
 from .quiz_logic import evaluate_schedule
+from .quiz_views import QuizView
 from .util import (
     QUESTIONS_PATH,
     QUIZ_DATA_PATH,
@@ -25,36 +26,6 @@ logger = logging.getLogger(__name__)
 
 API_TIMEOUT = aiohttp.ClientTimeout(total=15)
 USER_AGENT = "XEDB-Discord-Bot/1.0"
-
-
-class QuizView(discord.ui.View):
-    def __init__(self, question: str, choices: list[str], correct_index: int, quiz_callback):
-        super().__init__(timeout=1800)
-        self.question = question
-        self.choices = choices
-        self.correct_index = correct_index
-        self.quiz_callback = quiz_callback
-        self.answered_users = {}
-
-        for i, choice in enumerate(choices):
-            button = discord.ui.Button(label=choice, style=discord.ButtonStyle.primary, custom_id=f"choice_{i}")
-            button.callback = self.create_response_callback(i)
-            self.add_item(button)
-
-    def create_response_callback(self, idx: int):
-        async def response_callback(interaction: discord.Interaction):
-            await self.handle_response(interaction, idx)
-
-        return response_callback
-
-    async def handle_response(self, interaction: discord.Interaction, chosen_index: int):
-        if interaction.user.id in self.answered_users:
-            await interaction.response.send_message("You have already answered this question!", ephemeral=True, delete_after=5)
-            return
-
-        self.answered_users[interaction.user.id] = chosen_index
-        correct = chosen_index == self.correct_index
-        await self.quiz_callback(interaction, correct, self.choices[self.correct_index])
 
 
 class Quiz(commands.Cog):
@@ -159,38 +130,36 @@ class Quiz(commands.Cog):
     async def before_check_quiz_time(self):
         await self.client.wait_until_ready()
 
-    async def build_category_mapping(self) -> None:
-        url = "https://opentdb.com/api_category.php"
+    async def _opentdb_get(self, url: str, params: dict | None = None) -> dict:
+        """GET a JSON payload from OpenTDB. Raises on transport/HTTP failure."""
         headers = {"User-Agent": USER_AGENT}
+        async with aiohttp.ClientSession(timeout=API_TIMEOUT, headers=headers) as session, session.get(url, params=params) as response:
+            response.raise_for_status()
+            return await response.json()
+
+    async def build_category_mapping(self) -> None:
         try:
-            async with aiohttp.ClientSession(timeout=API_TIMEOUT, headers=headers) as session, session.get(url) as response:
-                response.raise_for_status()
-                data = await response.json()
+            data = await self._opentdb_get("https://opentdb.com/api_category.php")
             self.category_mapping = {category["name"]: category["id"] for category in data.get("trivia_categories", [])}
             logger.info("Fetched %s quiz categories from OpenTDB", len(self.category_mapping))
         except Exception as e:
             logger.warning("Error fetching categories: %s", e)
             self.category_mapping = {}
 
+    async def _token_command(self, command: str, token: str | None = None) -> str:
+        url = f"https://opentdb.com/api_token.php?command={command}"
+        if token:
+            url += f"&token={token}"
+        data = await self._opentdb_get(url)
+        if data.get("response_code") == 0:
+            return data["token"]
+        raise RuntimeError(f"OpenTDB token command {command!r} failed")
+
     async def get_session_token(self) -> str:
-        url = "https://opentdb.com/api_token.php?command=request"
-        headers = {"User-Agent": USER_AGENT}
-        async with aiohttp.ClientSession(timeout=API_TIMEOUT, headers=headers) as session, session.get(url) as response:
-            response.raise_for_status()
-            data = await response.json()
-            if data.get("response_code") == 0:
-                return data["token"]
-            raise RuntimeError("Failed to retrieve session token")
+        return await self._token_command("request")
 
     async def reset_session_token(self, token: str) -> str:
-        url = f"https://opentdb.com/api_token.php?command=reset&token={token}"
-        headers = {"User-Agent": USER_AGENT}
-        async with aiohttp.ClientSession(timeout=API_TIMEOUT, headers=headers) as session, session.get(url) as response:
-            response.raise_for_status()
-            data = await response.json()
-            if data.get("response_code") == 0:
-                return data["token"]
-            raise RuntimeError("Failed to reset token")
+        return await self._token_command("reset", token)
 
     async def fetch_questions_from_api(self) -> bool:
         if not self.data.get("session_token"):
@@ -201,19 +170,13 @@ class Quiz(commands.Cog):
                 logger.warning("Error getting session token: %s", e)
                 return False
 
-        headers = {"User-Agent": USER_AGENT}
         url = "https://opentdb.com/api.php"
         params = {"amount": 50, "token": self.data["session_token"]}
 
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             try:
-                async with (
-                    aiohttp.ClientSession(timeout=API_TIMEOUT, headers=headers) as session,
-                    session.get(url, params=params) as response,
-                ):
-                    response.raise_for_status()
-                    data = await response.json()
+                data = await self._opentdb_get(url, params)
             except asyncio.TimeoutError:
                 if attempt < max_attempts:
                     logger.warning("OpenTDB request timed out (attempt %s/%s); retrying", attempt, max_attempts)
@@ -260,6 +223,8 @@ class Quiz(commands.Cog):
 
             enabled_categories = self.data.get("enabled_categories", ["General Knowledge"])
             new_questions = []
+            used_texts = {cat: {q["question"] for q in used} for cat, used in self.used_questions.items()}
+            active_texts = {cat: {item["question"] for item in items} for cat, items in self.questions.items()}
 
             for q in raw_questions:
                 category = html.unescape(q["category"])
@@ -267,16 +232,13 @@ class Quiz(commands.Cog):
                     continue
 
                 question_text = html.unescape(q["question"])
+                if question_text in used_texts.get(category, set()):
+                    continue
+                if question_text in active_texts.setdefault(category, set()):
+                    continue
+
                 correct_answer = html.unescape(q["correct_answer"])
                 incorrect_answers = [html.unescape(a) for a in q["incorrect_answers"]]
-
-                is_duplicate = False
-                for used_q in self.used_questions.get(category, []):
-                    if used_q["question"] == question_text:
-                        is_duplicate = True
-                        break
-                if is_duplicate:
-                    continue
 
                 choices = list(dict.fromkeys([*incorrect_answers, correct_answer]))
                 random.shuffle(choices)
@@ -293,6 +255,7 @@ class Quiz(commands.Cog):
                         },
                     )
                 )
+                active_texts[category].add(question_text)
 
             for category, question in new_questions:
                 if category not in self.questions:
@@ -314,9 +277,6 @@ class Quiz(commands.Cog):
             return None, None
 
         category = random.choice(available_categories)
-        if not self.questions[category]:
-            return None, None
-
         question = random.choice(self.questions[category])
         return category, question
 
@@ -524,33 +484,28 @@ class Quiz(commands.Cog):
         if not self.category_mapping:
             await self.build_category_mapping()
 
-        enabled_categories = self.data.get("enabled_categories", [])
-        category_counts = {}
-        for category in self.questions:
-            category_counts[category] = len(self.questions[category])
+        enabled_categories = self.data.get("enabled_categories", ["General Knowledge"])
+        category_counts = {category: len(questions) for category, questions in self.questions.items()}
 
         embed = discord.Embed(title="Quiz Categories", color=discord.Color.blue())
 
-        enabled_text = ""
-        for category in enabled_categories:
-            count = category_counts.get(category, 0)
-            enabled_text += f"• {category} ({count} questions)\n"
-
+        enabled_text = "".join(
+            f"• {category} ({category_counts.get(category, 0)} questions)\n" for category in enabled_categories
+        )
         embed.add_field(
             name="📚 Enabled Categories",
-            value=enabled_text if enabled_text else "No categories enabled",
+            value=enabled_text or "No categories enabled",
             inline=False,
         )
 
         if self.category_mapping:
-            available_text = ""
-            for name in sorted(self.category_mapping):
-                marker = "✅ " if name in enabled_categories else ""
-                count = category_counts.get(name, 0)
-                available_text += f"{marker}{name} ({count} questions)\n"
+            available_text = "".join(
+                f"{'✅ ' if name in enabled_categories else ''}{name} ({category_counts.get(name, 0)} questions)\n"
+                for name in sorted(self.category_mapping)
+            )
             embed.add_field(
                 name="🌐 Available Categories",
-                value=available_text if available_text else "None",
+                value=available_text or "None",
                 inline=False,
             )
 

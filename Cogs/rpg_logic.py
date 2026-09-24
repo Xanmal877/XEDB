@@ -14,6 +14,18 @@ SKILL_COSTS = {
     "Dodge": {"stamina": 10},
 }
 
+SKILL_UNLOCKS = {
+    2: ["Power Strike", "Mana Shield"],
+    4: ["Fireball", "Dodge"],
+}
+
+ALL_SKILLS = tuple(skill for skills in SKILL_UNLOCKS.values() for skill in skills)
+
+
+def is_known_skill(skill_name: str) -> bool:
+    """True if *skill_name* is one of the skills the game defines."""
+    return skill_name in ALL_SKILLS
+
 
 def player_attack_damage(attack: int, level: int) -> int:
     """Player base damage: attack scaled by level plus a small variance."""

@@ -78,6 +78,30 @@ def test_skill_costs_defined():
     assert rpg_logic.SKILL_COSTS["Fireball"] == {"mana": 15}
 
 
+def test_is_known_skill():
+    assert rpg_logic.is_known_skill("Power Strike")
+    assert rpg_logic.is_known_skill("Dodge")
+    assert not rpg_logic.is_known_skill("Nuke")
+    assert not rpg_logic.is_known_skill("")
+
+
+def test_every_cost_has_a_unlock_level():
+    # A skill you can pay for but never learn is unreachable content.
+    for skill in rpg_logic.SKILL_COSTS:
+        assert rpg_logic.is_known_skill(skill), f"{skill} has a cost but no unlock level"
+
+
+def test_every_unlocked_skill_has_a_cost():
+    for skill in rpg_logic.ALL_SKILLS:
+        assert skill in rpg_logic.SKILL_COSTS, f"{skill} can be learned but has no cost"
+
+
+def test_skill_unlock_levels_are_reachable():
+    assert rpg_logic.SKILL_UNLOCKS[2] == ["Power Strike", "Mana Shield"]
+    assert rpg_logic.SKILL_UNLOCKS[4] == ["Fireball", "Dodge"]
+    assert set(rpg_logic.ALL_SKILLS) == set(rpg_logic.SKILL_COSTS)
+
+
 def test_choose_monster_prefers_in_range():
     random.seed(7)
     monster = rpg_logic.choose_monster(MONSTERS, 2)
