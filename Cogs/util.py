@@ -1,5 +1,6 @@
 """Shared utilities for XEDB cogs: absolute paths and atomic JSON persistence."""
 
+import copy
 import json
 import logging
 import os
@@ -19,15 +20,19 @@ QUESTIONS_PATH = DATA_DIR / "questions.json"
 USED_QUESTIONS_PATH = DATA_DIR / "used-questions.json"
 
 
-def load_json(path) -> dict:
-    """Load a JSON object from *path*, returning {} for missing files.
+def load_json(path, default=None):
+    """Load JSON from *path*.
 
-    Corrupt or non-object files are backed up with a .bak suffix instead of
-    being silently discarded, so live data is never lost.
+    *default* ({} if omitted) is returned for missing or corrupt files, and
+    when the loaded value is not the same type as *default*. Corrupt files are
+    backed up with a .bak suffix so live data is never discarded silently.
     """
+    if default is None:
+        default = {}
+    expected = type(default)
     path = Path(path)
     if not path.exists():
-        return {}
+        return copy.deepcopy(default)
 
     try:
         with open(path, encoding="utf-8") as f:
@@ -40,15 +45,15 @@ def load_json(path) -> dict:
             logger.info("Corrupt JSON backed up to %s", backup)
         except OSError:
             logger.exception("Could not back up corrupt JSON at %s", path)
-        return {}
+        return copy.deepcopy(default)
 
-    if not isinstance(data, dict):
-        logger.warning("JSON file %s is not an object; treating as empty", path)
-        return {}
+    if not isinstance(data, expected):
+        logger.warning("JSON file %s is not a %s; treating as empty", path, expected.__name__)
+        return copy.deepcopy(default)
     return data
 
 
-def save_json(path, data: dict) -> None:
+def save_json(path, data) -> None:
     """Atomically write *data* to *path* via a temp file + os.replace."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

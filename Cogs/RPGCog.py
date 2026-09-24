@@ -202,11 +202,8 @@ class SkillMenuView(discord.ui.View):
         self.learn_only = learn_only
 
         for skill_name in skills:
-            skill_data = next(
-                (s for level in cog.SKILLS.values() for s in level if s["name"] == skill_name),
-                None,
-            )
-            if not skill_data:
+            defined = any(s == skill_name for level in cog.SKILLS.values() for s in level)
+            if not defined:
                 logger.warning("Skill %s is not defined in SKILLS; skipping button", skill_name)
                 continue
             label = skill_name
@@ -362,19 +359,13 @@ class RPG(commands.Cog):
         self.client = client
         self.user_data: dict = load_json(PLAYERS_PATH)
         self.shop_data: dict = load_json(SHOP_PATH)
-        self.monsters: dict = load_json(MONSTERS_PATH)
+        self.monsters = load_json(MONSTERS_PATH, default=[])
         self.regen_task = None
         self.restock_task = None
 
         self.SKILLS = {
-            2: [
-                {"name": "Power Strike", "cost_type": "stamina", "cost": 20, "effect": {"attack_multiplier": 1.5}},
-                {"name": "Mana Shield", "cost_type": "mana", "cost": 30, "effect": {"defense_bonus": 5}},
-            ],
-            4: [
-                {"name": "Fireball", "cost_type": "mana", "cost": 40, "effect": {"damage_boost": 10}},
-                {"name": "Dodge", "cost_type": "stamina", "cost": 25, "effect": {"evasion_chance": 0.3}},
-            ],
+            2: ["Power Strike", "Mana Shield"],
+            4: ["Fireball", "Dodge"],
         }
 
         self.items = {
@@ -422,7 +413,7 @@ class RPG(commands.Cog):
         user = self.user_data.setdefault(user_id, {})
         for key, default in DEFAULT_USER.items():
             if key not in user:
-                user[key] = default
+                user[key] = copy.deepcopy(default)
         if not isinstance(user.get("inventory"), dict):
             user["inventory"] = {}
         if not isinstance(user.get("cooldowns"), dict):
@@ -567,11 +558,8 @@ class RPG(commands.Cog):
         dodged = False
         shielded = False
         if skill_name:
-            skill_data = next(
-                (s for level in self.SKILLS.values() for s in level if s["name"] == skill_name),
-                None,
-            )
-            if not skill_data:
+            defined = any(s == skill_name for level in self.SKILLS.values() for s in level)
+            if not defined:
                 return (f"❌ Skill {skill_name} not found!", [])
 
             cost_map = rpg_logic.SKILL_COSTS.get(skill_name, {})
@@ -616,9 +604,9 @@ class RPG(commands.Cog):
                 for unlock_level in (2, 4):
                     if old_level < unlock_level <= user["level"]:
                         for skill in self.SKILLS.get(unlock_level, []):
-                            if skill["name"] not in owned:
-                                unlock_names.append(skill["name"])
-                                owned.add(skill["name"])
+                            if skill not in owned:
+                                unlock_names.append(skill)
+                                owned.add(skill)
             save_json(PLAYERS_PATH, self.user_data)
             return (response, unlock_names)
 

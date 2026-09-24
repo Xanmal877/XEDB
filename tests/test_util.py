@@ -41,3 +41,15 @@ def test_save_is_valid_json(tmp_path):
     assert json.loads(path.read_text()) == {"x": "y"}
     # temp file is cleaned up
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_load_json_accepts_list_when_default_is_list(tmp_path):
+    path = tmp_path / "monsters.json"
+    save_json(path, [{"name": "Rat"}])
+    assert load_json(path, default=[]) == [{"name": "Rat"}]
+
+
+def test_load_json_rejects_list_when_default_is_dict(tmp_path):
+    path = tmp_path / "data.json"
+    path.write_text("[1, 2, 3]")
+    assert load_json(path) == {}

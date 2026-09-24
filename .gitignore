@@ -14,6 +14,8 @@ DataFiles/questions.json
 DataFiles/used-questions.json
 DataFiles/rpgFiles/players.json
 DataFiles/rpgFiles/shop-items.json
+DataFiles/**/*.bak
+DataFiles/**/*.tmp
 
 # Runtime artifacts
 logs/
