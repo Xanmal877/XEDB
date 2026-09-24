@@ -5,53 +5,19 @@ import json
 import logging
 import os
 import random
-import re
 
 import discord
-import ollama
 from discord import app_commands
 from discord.ext import commands
 
 import config
+from llm_setup import PERSONALITIES, generate_response, mentioned_personality
 
 logger = logging.getLogger(__name__)
 
-PERSONALITIES = {
-    "tama": {
-        "model": config.OLLAMA_MODEL,
-        "names": ["tama", "tamaneko"],
-    },
-    "saki": {
-        "model": config.OLLAMA_MODEL,
-        "names": ["saki", "autumn"],
-    },
-}
-
-
-def mentioned_personality(text: str) -> str | None:
-    """Return personality ID if *text* contains a trigger as a whole word."""
-    text_lower = text.lower()
-    for pid, personality in PERSONALITIES.items():
-        if any(re.search(rf"\b{re.escape(name)}\b", text_lower) for name in personality["names"]):
-            return pid
-    return None
-
-
-def GenerateResponse(message, modelName):
-    try:
-        response = ollama.chat(
-            model=modelName,
-            messages=[{"role": "user", "content": message.content}],
-            stream=False,
-        )
-        return response["message"]["content"]
-    except Exception:
-        logger.exception("Error in GenerateResponse")
-        return None
-
 
 def GenerateGameList():
-    game_list_file = config.ROOT / "DataFiles" / "GameList.json"
+    game_list_file = config.CODE_ROOT / "DataFiles" / "GameList.json"
     games = []
 
     try:
@@ -163,12 +129,14 @@ class EchoBot:
         if mentioned:
             self.current_personality = mentioned
         personality_id = mentioned or self.current_personality
-        model_name = PERSONALITIES[personality_id]["model"]
+        personality = PERSONALITIES.get(personality_id) or PERSONALITIES.get(self.default_personality)
+        if not personality:
+            return
 
         should_reply = channel_name == self.chatChannel or mentioned or random.randrange(0, config.REPLY_CHANCE) == 0
         if not should_reply:
             return
 
-        response = await asyncio.to_thread(GenerateResponse, message, model_name)
+        response = await asyncio.to_thread(generate_response, message.content, personality)
         if response:
             await message.channel.send(response)
