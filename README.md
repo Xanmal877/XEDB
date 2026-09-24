@@ -4,19 +4,14 @@ A unified Discord bot with multi-personality AI, voice music playback, an RPG sy
 
 ## Architecture
 
-One bot. One token. Two personalities. Talk to it as **Tama** or **Saki** and it switches context automatically based on trigger words in your message.
+One bot process. One Discord token. One `personality.yaml`. Clone the instance (not the code) for Tama vs Saki — each is a long-running systemd service.
 
-| Personality | Trigger words |
-|---|---|
-| **Tama** | `tama`, `tamaneko` |
-| **Saki** | `saki`, `autumn` |
-
-All cogs load for the unified bot. No more juggling two separate bot applications.
+Talk to the instance by any of its trigger names and it replies as that character.
 
 ## Prerequisites
 
 - Python 3.10+
-- [Ollama](https://ollama.com) running locally
+- [Ollama](https://ollama.com) running locally **or** an [Ollama Cloud](https://ollama.com/cloud) API key
 - [ffmpeg](https://ffmpeg.org) installed and on PATH (required for MusicCog voice playback)
 - A Discord bot token (create at https://discord.com/developers/applications)
 
@@ -29,10 +24,10 @@ python main.py
 ```
 
 On first run the bot will:
-1. Auto-install missing Python packages (discord.py, python-dotenv, ollama, yt-dlp, pytz)
-2. Prompt you for your Discord bot token, channel name, and default personality
-3. Write these to `.env`
-4. Pull `gemma4` from Ollama if it is not already local
+1. Auto-install missing Python packages (discord.py, python-dotenv, ollama, yt-dlp, pytz, PyYAML)
+2. Prompt you for your Discord bot token and channel name
+3. Write those to `.env` in the instance home
+4. Pull the *local* personality model from Ollama if it is not already available
 5. Warn you if Ollama or ffmpeg are missing and offer to open their download pages
 
 ## Environment Variables
@@ -43,17 +38,113 @@ Create `.env` manually or let the first-run wizard handle it:
 |---|---|---|
 | `BotToken` | Yes | Discord bot token |
 | `ChatChannel` | No | Channel name the bot listens in (default: `general`) |
-| `DefaultPersonality` | No | `tama` or `saki` (default: `tama`) |
+| `DefaultPersonality` | No | Unused unless you override the yaml `id` (leave unset) |
 | `BotOwnerId` | No | Discord user ID allowed to use owner-restricted commands (falls back to guild owner/admin) |
 | `CommandPrefix` | No | Legacy text-command prefix (default: `!`) |
 | `ReplyChance` | No | 1-in-N chance to reply in other channels when not named (default: `6`) |
 | `ActivityHours` | No | Hours between Discord activity rotations (default: `12`) |
-| `OllamaModel` | No | Ollama model for AI responses (default: `gemma4`) |
-| `OllamaHost` | No | Ollama HTTP endpoint (default: `http://localhost:11434`) |
+| `OllamaHost` | No | Local Ollama HTTP endpoint (default: `http://localhost:11434`) |
+| `OllamaApiKey` | Yes for cloud | Ollama Cloud API key (also `OLLAMA_API_KEY`). Required for `endpoint: cloud` |
+| `OllamaCloudHost` | No | Ollama Cloud API host (default: `https://ollama.com`) |
+| `OpenAIApiKey` | No | OpenAI API key for `codex` / `luna` fallbacks |
+| `CodexModel` | No | OpenAI model for the `codex` fallback (default: `gpt-5.3-codex`) |
+| `LunaApiKey` | No | Optional separate key for Luna; otherwise `OpenAIApiKey` |
+| `LunaModel` | No | OpenAI volume model (default: `gpt-5.6-luna`) |
 | `SongsDir` | No | Local music directory for `/play_music` (default: `Songs`) |
 | `AloneDisconnectSeconds` | No | Leave voice after this many seconds alone (default: `60`) |
 | `QuizTimezone` | No | IANA timezone for the daily quiz (default: `US/Arizona`) |
 | `SteamGamesDir` | No | Extra folder of game names for presence (Windows Steam `common/` is used if unset and present) |
+
+## Personalities (`personality.yaml`)
+
+`.env` is secrets and runtime knobs. The character and which cogs run live in `personality.yaml` in the instance home (`XEDB_HOME`, or the repo root):
+
+```yaml
+id: tama
+names:
+  - tama
+  - tamaneko
+model: gemma4:31b
+endpoint: cloud
+system: |
+  You are Tama.
+fallbacks: [codex, luna]
+cogs:
+  ModerationCog: true
+  MusicCog: true
+  RPGCog: false
+  QuizCog: false
+```
+
+Omitted cogs stay **on**. Names also accept `music`, `rpg`, `quiz`, `moderation`.
+
+Default path for Pi clones: **Ollama Cloud `gemma4:31b`**. If that call fails (quota, outage), the bot tries **codex** then **luna**:
+
+| Fallback | What it actually is | Keys |
+|---|---|---|
+| `codex` | OpenAI **API** (`CodexModel`, default `gpt-5.3-codex`) | `OpenAIApiKey` |
+| `luna` | OpenAI cheap volume model (`LunaModel`, default `gpt-5.6-luna`) | `LunaApiKey` or `OpenAIApiKey` |
+
+The ChatGPT **Codex subscription / Codex app cannot be called from this bot**. If you only have the sub and no API key, skip `codex` and leave `luna` (or drop both and stay on Ollama Cloud).
+
+`endpoint` is explicit. Direct cloud uses `gemma4:31b` + `OllamaApiKey`. A `:cloud` tag on a **local** daemon is still `endpoint: local`.
+
+Clone Saki as a second instance with its own yaml, token, and cog flags — do not cram two Discord bots into one process.
+
+## Running as daemons (Pi)
+
+One code checkout, one venv, N instance directories. The Pi should use `endpoint: cloud` or `OllamaHost` pointing at a machine that actually has a GPU — a Pi will not run Gemma locally in any useful way.
+
+```bash
+# once
+sudo mkdir -p /home/xanmal/xedb/app /home/xanmal/xedb/instances
+sudo rsync -a ./ /home/xanmal/xedb/app/
+cd /home/xanmal/xedb/app
+python -m venv venv
+./venv/bin/pip install -r requirements.txt
+
+# per bot
+INSTANCE=tama
+mkdir -p /home/xanmal/xedb/instances/$INSTANCE
+cp personality.yaml /home/xanmal/xedb/instances/$INSTANCE/
+cp .env.example /home/xanmal/xedb/instances/$INSTANCE/.env
+# edit .env (BotToken, OllamaApiKey / OllamaHost) and personality.yaml (id, cogs)
+
+sudo cp deploy/xedb@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now xedb@$INSTANCE
+```
+
+Launch another clone:
+
+```bash
+cp -a /home/xanmal/xedb/instances/tama /home/xanmal/xedb/instances/saki
+# new token + yaml, then:
+sudo systemctl enable --now xedb@saki
+```
+
+Foreground equivalent: `python main.py --home /home/xanmal/xedb/instances/tama`
+
+Logs: `journalctl -u xedb@tama -f` and `$XEDB_HOME/bot.log`.
+
+### Stopping a bot
+
+Use systemd, not `kill`:
+
+```bash
+sudo systemctl stop xedb@tama     # clean shutdown, sends SIGTERM
+sudo systemctl restart xedb@tama
+```
+
+`main.py` traps both SIGINT (Ctrl+C) and SIGTERM (what systemd sends) and closes
+the gateway connection properly — it sends a close frame and shuts the HTTP
+session down before exiting. If you instead `kill -9` the process, nothing can
+run: the socket dies without a close frame, so Discord's gateway is never told
+the bot left and can keep showing it as online until the session times out.
+
+`xedb@.service` sets `Restart=always`, so it comes back ~5s after any exit.
+That is intended for a long-running daemon. To take one down for good, `stop`
+it — stopping does not trigger a restart.
 
 ## Cogs
 
@@ -183,7 +274,7 @@ Install dev dependencies and run tests:
 ```bash
 pip install -r requirements-dev.txt
 pytest
-ruff check Cogs/ main.py
+ruff check Cogs/ main.py bot.py cog_manager.py safety_checks.py config.py llm_setup.py tests/
 ```
 
 ## Notes

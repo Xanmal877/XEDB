@@ -1,0 +1,21 @@
+[Unit]
+Description=XEDB Discord bot (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xanmal
+Group=xanmal
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+Environment=PYTHONUNBUFFERED=1
+Environment=XEDB_HOME=/home/xanmal/xedb/instances/%i
+WorkingDirectory=/home/xanmal/xedb/app
+ExecStart=/home/xanmal/xedb/app/venv/bin/python /home/xanmal/xedb/app/main.py
+# No TTY: will not pip-install, prompt, or ollama pull.
+
+[Install]
+WantedBy=multi-user.target

@@ -3,8 +3,6 @@
 import subprocess
 import sys
 
-import ollama
-
 import config
 
 
@@ -47,9 +45,11 @@ def offer_open(url: str, name: str):
 
 
 def health_checks():
-    if not check_ollama():
+    from llm_setup import needs_local_runtime
+
+    if needs_local_runtime() and not check_ollama():
         print(f"\n⚠️  Ollama is not running on {config.OLLAMA_HOST}")
-        print("   The bot needs Ollama for AI responses.")
+        print("   The bot needs Ollama for local AI responses.")
         offer_open("https://ollama.com/download", "Ollama")
         print("   Start Ollama and try again.\n")
 
@@ -58,30 +58,3 @@ def health_checks():
         print("   The MusicCog needs ffmpeg for voice channel audio playback.")
         offer_open("https://ffmpeg.org/download.html", "ffmpeg")
         print("   Install ffmpeg and try again.\n")
-
-
-def ensure_ollama_model(model_name: str):
-    """Warn (and optionally pull) if the Ollama model is not local."""
-    try:
-        response = ollama.list()
-        models = []
-        if hasattr(response, "models"):
-            models = [getattr(m, "model", str(m)) for m in response.models]
-        elif isinstance(response, dict):
-            models = [m.get("model", m.get("name", "")) for m in response.get("models", [])]
-
-        if any(model_name == m or model_name in m for m in models):
-            print(f"[Bootstrap] Ollama model '{model_name}' is available")
-            return
-
-        if not sys.stdin.isatty():
-            print(f"[Bootstrap] Warning: Ollama model '{model_name}' is not local.")
-            print(f"   Pull it manually: ollama pull {model_name}")
-            return
-
-        print(f"[Bootstrap] Pulling Ollama model '{model_name}' (this may take a few minutes)...")
-        ollama.pull(model_name)
-        print(f"[Bootstrap] Model '{model_name}' ready")
-    except Exception as e:
-        print(f"[Bootstrap] Warning: could not pull '{model_name}': {e}")
-        print(f"   Make sure Ollama is running and try manually: ollama pull {model_name}")

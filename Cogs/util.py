@@ -6,9 +6,11 @@ import logging
 import os
 from pathlib import Path
 
+import config
+
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = config.HOME
 DATA_DIR = BASE_DIR / "DataFiles"
 RPG_DIR = DATA_DIR / "rpgFiles"
 
