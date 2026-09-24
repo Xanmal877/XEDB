@@ -3,6 +3,7 @@
 # Transitive dependencies will be pulled in automatically.
 
 discord.py
+PyNaCl
 python-dotenv
 ollama
 yt-dlp

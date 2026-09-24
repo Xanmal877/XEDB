@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import logging
 import os
+import re
 import subprocess
 import sys
 
@@ -15,6 +16,7 @@ def _ensure_deps():
         "ollama": "ollama",
         "yt_dlp": "yt-dlp",
         "pytz": "pytz",
+        "nacl": "PyNaCl",
     }
     missing = []
     for module, package in required.items():
@@ -44,22 +46,31 @@ def _setup_logging():
     console.setFormatter(formatter)
     root.addHandler(console)
 
-    normal = logging.FileHandler("bot.log", encoding="utf-8")
+    log_dir = os.path.dirname(os.path.abspath(__file__))
+    normal = logging.FileHandler(os.path.join(log_dir, "bot.log"), encoding="utf-8")
     normal.setFormatter(formatter)
     root.addHandler(normal)
 
-    error = logging.FileHandler("bot-error.log", encoding="utf-8")
+    error = logging.FileHandler(os.path.join(log_dir, "bot-error.log"), encoding="utf-8")
     error.setLevel(logging.ERROR)
     error.setFormatter(formatter)
     root.addHandler(error)
 
 
 logger = logging.getLogger(__name__)
-_setup_logging()
 
-# ── Interactive .env setup ────────────────────────────────────────────
 ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-if not os.path.exists(ENV_PATH):
+
+
+def _ensure_env():
+    """Create .env interactively, or exit if running non-interactively."""
+    if os.path.exists(ENV_PATH):
+        return
+
+    if not sys.stdin.isatty():
+        print("❌ No .env found. Copy .env.example to .env and set BotToken.")
+        sys.exit(1)
+
     print("\n=== First-time setup ===")
     print("Create a Discord bot at https://discord.com/developers/applications\n")
 
@@ -77,6 +88,7 @@ if not os.path.exists(ENV_PATH):
         f.write("\n".join(lines) + "\n")
     print(f"[Bootstrap] Created {ENV_PATH}\n")
 
+
 # ── Third-party imports (safe now that deps are guaranteed) ──────────
 import asyncio
 import json
@@ -87,8 +99,6 @@ import ollama
 from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
-
-load_dotenv()
 
 
 # ── External dependency health checks ─────────────────────────────────
@@ -114,6 +124,8 @@ def _check_ffmpeg():
 
 def _offer_open(url: str, name: str):
     """Ask user if they want to open a download page."""
+    if not sys.stdin.isatty():
+        return
     try:
         response = input(f"Open {name} download page in browser? [y/N]: ").strip().lower()
         if response in ("y", "yes"):
@@ -125,24 +137,25 @@ def _offer_open(url: str, name: str):
         pass
 
 
-if not _check_ollama():
-    print("\n⚠️  Ollama is not running on http://localhost:11434")
-    print("   The bot needs Ollama for AI responses.")
-    _offer_open("https://ollama.com/download", "Ollama")
-    print("   Start Ollama and try again.\n")
+def _health_checks():
+    if not _check_ollama():
+        print("\n⚠️  Ollama is not running on http://localhost:11434")
+        print("   The bot needs Ollama for AI responses.")
+        _offer_open("https://ollama.com/download", "Ollama")
+        print("   Start Ollama and try again.\n")
 
-if not _check_ffmpeg():
-    print("\n⚠️  ffmpeg is not installed or not in PATH")
-    print("   The MusicCog needs ffmpeg for voice channel audio playback.")
-    _offer_open("https://ffmpeg.org/download.html", "ffmpeg")
-    print("   Install ffmpeg and try again.\n")
+    if not _check_ffmpeg():
+        print("\n⚠️  ffmpeg is not installed or not in PATH")
+        print("   The MusicCog needs ffmpeg for voice channel audio playback.")
+        _offer_open("https://ffmpeg.org/download.html", "ffmpeg")
+        print("   Install ffmpeg and try again.\n")
 
-# ── Ollama model bootstrap ─────────────────────────────────────────────
+
 DEFAULT_MODEL = os.getenv("OllamaModel", "gemma4")
 
 
 def _ensure_ollama_model(model_name: str):
-    """Pull the model from Ollama if it's not already available locally."""
+    """Warn (and optionally pull) if the Ollama model is not local."""
     try:
         response = ollama.list()
         models = []
@@ -155,6 +168,11 @@ def _ensure_ollama_model(model_name: str):
             print(f"[Bootstrap] Ollama model '{model_name}' is available")
             return
 
+        if not sys.stdin.isatty():
+            print(f"[Bootstrap] Warning: Ollama model '{model_name}' is not local.")
+            print(f"   Pull it manually: ollama pull {model_name}")
+            return
+
         print(f"[Bootstrap] Pulling Ollama model '{model_name}' (this may take a few minutes)...")
         ollama.pull(model_name)
         print(f"[Bootstrap] Model '{model_name}' ready")
@@ -162,8 +180,6 @@ def _ensure_ollama_model(model_name: str):
         print(f"[Bootstrap] Warning: could not pull '{model_name}': {e}")
         print(f"   Make sure Ollama is running and try manually: ollama pull {model_name}")
 
-
-_ensure_ollama_model(DEFAULT_MODEL)
 
 # ── Personality Configuration ────────────────────────────────────────
 PERSONALITIES = {
@@ -176,6 +192,15 @@ PERSONALITIES = {
         "names": ["saki", "autumn"],
     },
 }
+
+
+def mentioned_personality(text: str) -> str | None:
+    """Return personality ID if *text* contains a trigger as a whole word."""
+    text_lower = text.lower()
+    for pid, config in PERSONALITIES.items():
+        if any(re.search(rf"\b{re.escape(name)}\b", text_lower) for name in config["names"]):
+            return pid
+    return None
 
 
 # ── Utility: Generate AI response via Ollama ──────────────────────────
@@ -251,6 +276,7 @@ class EchoBot:
         self.chatChannel = chatChannel
         self.default_personality = default_personality
         self.current_personality = default_personality
+        self._synced = False
 
         self.client.event(self.on_ready)
         self.client.event(self.on_message)
@@ -287,15 +313,14 @@ class EchoBot:
         except (discord.HTTPException, discord.NotFound):
             logger.exception("Could not send error response for command %r", interaction.command)
 
-    def _detect_personality(self, text: str) -> str:
-        """Return personality ID if text contains a personality trigger word."""
-        text_lower = text.lower()
-        for pid, config in PERSONALITIES.items():
-            if any(name in text_lower for name in config["names"]):
-                return pid
-        return self.current_personality
-
     async def on_ready(self):
+        if not self._synced:
+            try:
+                await self.client.tree.sync()
+                self._synced = True
+                logger.info("Slash commands synced")
+            except Exception:
+                logger.exception("Failed to sync slash commands")
         self.client.loop.create_task(SetActivity(self.client))
         logger.info("EchoBot logged in as %s", self.client.user)
         logger.info("Default personality: %s", self.default_personality)
@@ -305,31 +330,19 @@ class EchoBot:
             return
 
         channel_name = message.channel.name if hasattr(message.channel, "name") else None
-        content_lower = message.content.lower()
-
-        # Detect which personality is being addressed
-        personality_id = self._detect_personality(content_lower)
+        mentioned = mentioned_personality(message.content)
+        if mentioned:
+            self.current_personality = mentioned
+        personality_id = mentioned or self.current_personality
         model_name = PERSONALITIES[personality_id]["model"]
 
-        # 1. Dedicated chat channel — always respond
-        if channel_name == self.chatChannel:
-            response = GenerateResponse(message, model_name)
-            if response:
-                await message.channel.send(response)
+        should_reply = channel_name == self.chatChannel or mentioned or random.randrange(0, 6) == 0
+        if not should_reply:
             return
 
-        # 2. Mentioned by personality name in other channels
-        if personality_id != self.current_personality:
-            response = GenerateResponse(message, model_name)
-            if response:
-                await message.channel.send(response)
-            return
-
-        # 3. Random 1-in-6 chance in other channels
-        if channel_name != self.chatChannel and random.randrange(0, 6) == 0:
-            response = GenerateResponse(message, model_name)
-            if response:
-                await message.channel.send(response)
+        response = await asyncio.to_thread(GenerateResponse, message, model_name)
+        if response:
+            await message.channel.send(response)
 
 
 # ── Cog manager ───────────────────────────────────────────────────────
@@ -348,7 +361,6 @@ class CogManager:
     async def load_cogs(self):
         await self.remove_cogs()
 
-        # Load all cogs for the unified bot
         loaded = []
         for cog in ALL_COGS:
             try:
@@ -382,12 +394,23 @@ async def main():
 
     bot = EchoBot(token=token, chatChannel=chat_channel, default_personality=default_personality)
     cog_manager = CogManager(bot.client)
-    await cog_manager.load_cogs()
-    await bot.client.tree.sync()
 
-    logger.info("EchoBot Online! Default personality: %s", default_personality)
+    async def setup_hook():
+        await cog_manager.load_cogs()
+
+    bot.client.setup_hook = setup_hook
+
+    logger.info("EchoBot starting. Default personality: %s", default_personality)
     await bot.client.start(bot.token)
 
 
 if __name__ == "__main__":
+    _setup_logging()
+    _ensure_env()
+    load_dotenv()
+    DEFAULT_MODEL = os.getenv("OllamaModel", "gemma4")
+    for _pid in PERSONALITIES:
+        PERSONALITIES[_pid]["model"] = DEFAULT_MODEL
+    _health_checks()
+    _ensure_ollama_model(DEFAULT_MODEL)
     asyncio.run(main())
