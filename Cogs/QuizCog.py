@@ -102,9 +102,6 @@ class Quiz(commands.Cog):
         except Exception:
             logger.exception("Error in QuizCog on_ready")
 
-    async def before_loop(self):
-        await self.client.wait_until_ready()
-
     @tasks.loop(minutes=1)
     async def check_quiz_time(self):
         try:
@@ -155,9 +152,10 @@ class Quiz(commands.Cog):
 
         except Exception:
             logger.exception("Critical error in check_quiz_time")
-            self.data["quiz_started"] = False
-            self.data["quiz_finished_today"] = False
-            save_json(QUIZ_DATA_PATH, self.data)
+
+    @check_quiz_time.before_loop
+    async def before_check_quiz_time(self):
+        await self.client.wait_until_ready()
 
     async def build_category_mapping(self) -> None:
         url = "https://opentdb.com/api_category.php"

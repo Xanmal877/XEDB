@@ -128,7 +128,8 @@ Scheduled daily trivia from [OpenTDB](https://opentdb.com). Runs automatically. 
 
 **Schedule**
 - **6:00 AM** (Arizona time): Quiz posts in the configured channel
-- **6:00 PM** (Arizona time): Correct answer revealed, points awarded
+- **6:00 PM** (Arizona time): Correct answer revealed in-channel
+- Points are awarded immediately when a user answers correctly
 - Automatically fetches new questions from OpenTDB when running low
 
 **Files**: quiz state, questions, used questions, and points are saved under `DataFiles/` (runtime, git-ignored).
