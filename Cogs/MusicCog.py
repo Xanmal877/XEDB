@@ -30,6 +30,8 @@ def is_blocked_url(url: str) -> bool:
     host = parsed.hostname
     if not host:
         return True
+    if host.lower() in {"localhost", "localhost.localdomain"}:
+        return True
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
@@ -493,8 +495,9 @@ class Music(commands.Cog):
             return
 
         embed = discord.Embed(title="Current Queue", color=0x00FF00)
-        for idx, track in enumerate(queue[:QUEUE_DISPLAY_LIMIT], 1):  # Show up to QUEUE_DISPLAY_LIMIT tracks
-            embed.add_field(name=f"{idx}. {track.title[:50]}...", value=f"Requested by {track.requester.mention}", inline=False)
+        for idx, track in enumerate(queue[:QUEUE_DISPLAY_LIMIT], 1):
+            title = track.title if len(track.title) <= 50 else f"{track.title[:50]}..."
+            embed.add_field(name=f"{idx}. {title}", value=f"Requested by {track.requester.mention}", inline=False)
 
         if len(queue) > QUEUE_DISPLAY_LIMIT:
             embed.set_footer(text=f"And {len(queue) - QUEUE_DISPLAY_LIMIT} more tracks...")
