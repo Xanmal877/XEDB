@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+import contextlib
 import importlib.util
 import logging
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -123,6 +125,49 @@ from llm_setup import ENABLED_EXTENSIONS, PERSONALITIES, ensure_personality_mode
 from safety_checks import health_checks
 
 
+async def run_bot(client, token: str, *, stop_event: asyncio.Event | None = None) -> None:
+    """Run the gateway until a stop signal arrives, then close it cleanly.
+
+    `await client.start(token)` never returns on its own and never calls
+    `close()`. If the process is killed while that coroutine is suspended,
+    Discord keeps showing the bot as online. Entering the client as an async
+    context manager makes the library call `close()` on exit, which sends a
+    proper close frame (code 1000) and shuts the HTTP session down.
+
+    Both SIGINT (Ctrl+C) and SIGTERM (what systemd sends) are handled in-process,
+    so a stop request always unwinds through `close()` instead of killing the
+    interpreter mid-frame. Pass `stop_event` to drive shutdown from a test.
+    """
+    if stop_event is None:
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with contextlib.suppress(NotImplementedError, AttributeError, ValueError, RuntimeError):
+                loop.add_signal_handler(sig, stop_event.set)
+
+    try:
+        async with client:
+            runner = asyncio.create_task(client.start(token), name="gateway")
+            waiter = asyncio.create_task(stop_event.wait(), name="stop-signal")
+            done, pending = await asyncio.wait({runner, waiter}, return_when=asyncio.FIRST_COMPLETED)
+
+            for task in pending:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+            if runner in done and not runner.cancelled():
+                # start() returned or raised on its own; surface real failures
+                # (bad token, privileged intents) instead of swallowing them.
+                error = runner.exception()
+                if error is not None:
+                    raise error
+            else:
+                logger.info("Shutdown requested; closing gateway connection.")
+    finally:
+        logger.info("EchoBot stopped.")
+
+
 async def main():
     token = config.BOT_TOKEN
     chat_channel = config.CHAT_CHANNEL
@@ -155,7 +200,7 @@ async def main():
     bot.client.setup_hook = setup_hook
 
     logger.info("EchoBot starting. Personality: %s  home: %s  cogs: %s", default_personality, config.HOME, ENABLED_EXTENSIONS)
-    await bot.client.start(bot.token)
+    await run_bot(bot.client, bot.token)
 
 
 if __name__ == "__main__":
