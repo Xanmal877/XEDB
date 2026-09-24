@@ -11,7 +11,7 @@ from pathlib import Path
 def _ensure_deps():
     """Check for required packages and pip-install anything missing."""
     required = {
-        "discord": "discord.py",
+        "discord": "discord.py[voice]",
         "dotenv": "python-dotenv",
         "ollama": "ollama",
         "yt_dlp": "yt-dlp",
@@ -19,8 +19,13 @@ def _ensure_deps():
         "nacl": "PyNaCl",
         "yaml": "PyYAML",
     }
+    # Voice is opt-in in discord.py 2.7+: without davey, joining a voice
+    # channel raises RuntimeError and every MusicCog command fails at runtime
+    # rather than at startup. Check it explicitly so a clone can't boot "fine"
+    # and then be unable to play anything.
+    voice_extras = {"davey": "davey"}
     missing = []
-    for module, package in required.items():
+    for module, package in {**required, **voice_extras}.items():
         if importlib.util.find_spec(module) is None:
             missing.append(package)
 
