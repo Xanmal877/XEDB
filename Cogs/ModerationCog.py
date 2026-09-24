@@ -29,10 +29,7 @@ def _is_owner_or_admin(interaction: discord.Interaction) -> bool:
 
 
 async def is_allowed_user(interaction: discord.Interaction):
-    if not _is_owner_or_admin(interaction):
-        await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
-        return False
-    return True
+    return _is_owner_or_admin(interaction)
 
 
 class Moderation(commands.Cog):
@@ -211,7 +208,7 @@ class Moderation(commands.Cog):
 
         results = []
 
-        for ext in self.client.extensions:
+        for ext in list(self.client.extensions):
             if ext == "__main__":
                 continue
             try:
