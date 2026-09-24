@@ -12,12 +12,12 @@ from discord import FFmpegPCMAudio, PCMVolumeTransformer, app_commands
 from discord.ext import commands
 from yt_dlp import YoutubeDL
 
+import config
 from Cogs import util
 
 logger = logging.getLogger(__name__)
 
 VIEW_TIMEOUT = 30
-ALONE_DISCONNECT_AFTER = 60
 MAX_SEARCH_RESULTS = 5
 QUEUE_DISPLAY_LIMIT = 10
 REPEAT_MAX_FAILURES = 3
@@ -141,12 +141,12 @@ class Music(commands.Cog):
         self._guild_locks = {}  # guild_id -> asyncio.Lock
 
         # Ensure Songs directory exists BEFORE scanning it
-        if not os.path.exists("Songs"):
-            os.makedirs("Songs")
+        if not os.path.exists(config.SONGS_DIR):
+            os.makedirs(config.SONGS_DIR)
         self.refresh_local_files_cache()
 
     def refresh_local_files_cache(self):
-        self.local_files_cache = [(f.lower(), f) for f in os.listdir("Songs") if f.endswith((".mp3", ".m4a", ".flac"))]
+        self.local_files_cache = [(f.lower(), f) for f in os.listdir(config.SONGS_DIR) if f.endswith((".mp3", ".m4a", ".flac"))]
 
     def _guild_lock(self, guild_id: int) -> asyncio.Lock:
         return self._guild_locks.setdefault(guild_id, asyncio.Lock())
@@ -399,12 +399,12 @@ class Music(commands.Cog):
         self._cancel_alone_timer(guild_id)
 
         async def _disconnect_after_delay():
-            await asyncio.sleep(ALONE_DISCONNECT_AFTER)
+            await asyncio.sleep(config.ALONE_DISCONNECT_SECONDS)
             channel = self.user_last_channel.get(guild_id)
             await self._disconnect_voice(guild_id, reason="alone")
             if channel:
                 try:
-                    await channel.send(f"👋 Left voice channel after being alone for {ALONE_DISCONNECT_AFTER} seconds.")
+                    await channel.send(f"👋 Left voice channel after being alone for {config.ALONE_DISCONNECT_SECONDS} seconds.")
                 except Exception:
                     logger.exception("Failed to send alone-timer message")
 
@@ -435,7 +435,12 @@ class Music(commands.Cog):
 
                 if matched:
                     tracks = [
-                        Track(source=os.path.join("Songs", f), title=os.path.splitext(f)[0], url="local-file", requester=interaction.user)
+                        Track(
+                            source=os.path.join(config.SONGS_DIR, f),
+                            title=os.path.splitext(f)[0],
+                            url="local-file",
+                            requester=interaction.user,
+                        )
                         for f in matched
                     ]
                     async with self._guild_lock(guild_id):

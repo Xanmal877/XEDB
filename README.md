@@ -45,7 +45,15 @@ Create `.env` manually or let the first-run wizard handle it:
 | `ChatChannel` | No | Channel name the bot listens in (default: `general`) |
 | `DefaultPersonality` | No | `tama` or `saki` (default: `tama`) |
 | `BotOwnerId` | No | Discord user ID allowed to use owner-restricted commands (falls back to guild owner/admin) |
+| `CommandPrefix` | No | Legacy text-command prefix (default: `!`) |
+| `ReplyChance` | No | 1-in-N chance to reply in other channels when not named (default: `6`) |
+| `ActivityHours` | No | Hours between Discord activity rotations (default: `12`) |
 | `OllamaModel` | No | Ollama model for AI responses (default: `gemma4`) |
+| `OllamaHost` | No | Ollama HTTP endpoint (default: `http://localhost:11434`) |
+| `SongsDir` | No | Local music directory for `/play_music` (default: `Songs`) |
+| `AloneDisconnectSeconds` | No | Leave voice after this many seconds alone (default: `60`) |
+| `QuizTimezone` | No | IANA timezone for the daily quiz (default: `US/Arizona`) |
+| `SteamGamesDir` | No | Extra folder of game names for presence (Windows Steam `common/` is used if unset and present) |
 
 ## Cogs
 

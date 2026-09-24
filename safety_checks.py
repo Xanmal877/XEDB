@@ -5,13 +5,18 @@ import sys
 
 import ollama
 
+import config
+
 
 def check_ollama():
     """Check if Ollama is running locally."""
     import urllib.request
 
+    host = config.OLLAMA_HOST
+    if not host.startswith(("http://", "https://")):
+        return False
     try:
-        urllib.request.urlopen("http://localhost:11434", timeout=2)
+        urllib.request.urlopen(host, timeout=2)  # noqa: S310
         return True
     except Exception:
         return False
@@ -43,7 +48,7 @@ def offer_open(url: str, name: str):
 
 def health_checks():
     if not check_ollama():
-        print("\n⚠️  Ollama is not running on http://localhost:11434")
+        print(f"\n⚠️  Ollama is not running on {config.OLLAMA_HOST}")
         print("   The bot needs Ollama for AI responses.")
         offer_open("https://ollama.com/download", "Ollama")
         print("   Start Ollama and try again.\n")

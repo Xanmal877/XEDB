@@ -89,17 +89,16 @@ def _ensure_env():
 
 import asyncio
 
-from dotenv import load_dotenv
-
+import config
 from bot import PERSONALITIES, EchoBot
 from cog_manager import CogManager
 from safety_checks import ensure_ollama_model, health_checks
 
 
 async def main():
-    token = os.getenv("BotToken")
-    chat_channel = os.getenv("ChatChannel", "general")
-    default_personality = os.getenv("DefaultPersonality", "tama")
+    token = config.BOT_TOKEN
+    chat_channel = config.CHAT_CHANNEL
+    default_personality = config.DEFAULT_PERSONALITY
 
     if not token:
         print("❌ BotToken not found in .env")
@@ -125,10 +124,9 @@ async def main():
 if __name__ == "__main__":
     _setup_logging()
     _ensure_env()
-    load_dotenv()
-    default_model = os.getenv("OllamaModel", "gemma4")
+    config.load(override=True)
     for pid in PERSONALITIES:
-        PERSONALITIES[pid]["model"] = default_model
+        PERSONALITIES[pid]["model"] = config.OLLAMA_MODEL
     health_checks()
-    ensure_ollama_model(default_model)
+    ensure_ollama_model(config.OLLAMA_MODEL)
     asyncio.run(main())

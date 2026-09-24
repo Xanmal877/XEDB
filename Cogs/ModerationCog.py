@@ -1,19 +1,15 @@
 import logging
-import os
 from datetime import timedelta
 
 import discord
 from discord import Forbidden, app_commands
 from discord.ext import commands
 
+import config
+
 logger = logging.getLogger(__name__)
 
-OWNER_ID = os.getenv("BotOwnerId")
-try:
-    OWNER_ID = int(OWNER_ID) if OWNER_ID else None
-except ValueError:
-    logger.warning("BotOwnerId env var is not a valid integer: %r", OWNER_ID)
-    OWNER_ID = None
+OWNER_ID = config.BOT_OWNER_ID
 
 
 def _is_owner_or_admin(interaction: discord.Interaction) -> bool:

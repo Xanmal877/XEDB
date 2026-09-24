@@ -12,17 +12,17 @@ import ollama
 from discord import app_commands
 from discord.ext import commands
 
-logger = logging.getLogger(__name__)
+import config
 
-DEFAULT_MODEL = os.getenv("OllamaModel", "gemma4")
+logger = logging.getLogger(__name__)
 
 PERSONALITIES = {
     "tama": {
-        "model": DEFAULT_MODEL,
+        "model": config.OLLAMA_MODEL,
         "names": ["tama", "tamaneko"],
     },
     "saki": {
-        "model": DEFAULT_MODEL,
+        "model": config.OLLAMA_MODEL,
         "names": ["saki", "autumn"],
     },
 }
@@ -31,8 +31,8 @@ PERSONALITIES = {
 def mentioned_personality(text: str) -> str | None:
     """Return personality ID if *text* contains a trigger as a whole word."""
     text_lower = text.lower()
-    for pid, config in PERSONALITIES.items():
-        if any(re.search(rf"\b{re.escape(name)}\b", text_lower) for name in config["names"]):
+    for pid, personality in PERSONALITIES.items():
+        if any(re.search(rf"\b{re.escape(name)}\b", text_lower) for name in personality["names"]):
             return pid
     return None
 
@@ -51,8 +51,7 @@ def GenerateResponse(message, modelName):
 
 
 def GenerateGameList():
-    bot_directory = os.path.dirname(os.path.abspath(__file__))
-    game_list_file = os.path.join(bot_directory, "DataFiles", "GameList.json")
+    game_list_file = config.ROOT / "DataFiles" / "GameList.json"
     games = []
 
     try:
@@ -64,7 +63,7 @@ def GenerateGameList():
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning("Error parsing GameList.json: %s", e)
 
-    steam_directory = r"C:\Program Files (x86)\Steam\steamapps\common"
+    steam_directory = config.STEAM_GAMES_DIR or r"C:\Program Files (x86)\Steam\steamapps\common"
     if os.path.isdir(steam_directory):
         try:
             steam_games = [name for name in os.listdir(steam_directory) if os.path.isdir(os.path.join(steam_directory, name))]
@@ -89,7 +88,7 @@ async def SetActivity(client):
                 activity=discord.Game(name=game),
             )
             logger.info("Activity set to: %s", game)
-            await asyncio.sleep(43200)  # 12 hours
+            await asyncio.sleep(config.ACTIVITY_HOURS * 3600)
         except Exception:
             logger.exception("Error in SetActivity")
             await asyncio.sleep(300)  # Retry in 5 min on error
@@ -98,7 +97,7 @@ async def SetActivity(client):
 class EchoBot:
     def __init__(self, token, chatChannel, default_personality):
         self.client = commands.Bot(
-            command_prefix=["!"],
+            command_prefix=[config.COMMAND_PREFIX],
             case_insensitive=True,
             intents=discord.Intents.all(),
         )
@@ -166,7 +165,7 @@ class EchoBot:
         personality_id = mentioned or self.current_personality
         model_name = PERSONALITIES[personality_id]["model"]
 
-        should_reply = channel_name == self.chatChannel or mentioned or random.randrange(0, 6) == 0
+        should_reply = channel_name == self.chatChannel or mentioned or random.randrange(0, config.REPLY_CHANCE) == 0
         if not should_reply:
             return
 

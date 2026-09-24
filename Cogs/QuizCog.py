@@ -10,6 +10,8 @@ import pytz
 from discord import app_commands
 from discord.ext import commands, tasks
 
+import config
+
 from .quiz_logic import evaluate_schedule
 from .util import (
     QUESTIONS_PATH,
@@ -105,7 +107,7 @@ class Quiz(commands.Cog):
     @tasks.loop(minutes=1)
     async def check_quiz_time(self):
         try:
-            arizona_tz = pytz.timezone("US/Arizona")
+            arizona_tz = pytz.timezone(config.QUIZ_TIMEZONE)
             now = datetime.now(arizona_tz)
 
             action = evaluate_schedule(
